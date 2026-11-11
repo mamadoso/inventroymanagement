@@ -264,9 +264,13 @@ def check_connection() -> dict:
                 out["model_available"] = config.AI_MODEL in names if names else None
                 out["detail"] = f"GET /models -> {r.status_code}"
                 if names and out["model_available"] is False:
-                    out["detail"] += f" - '{config.AI_MODEL}' NOT in list. Try one of: " + ", ".join(
-                        n for n in names if "vision" in n or "vl" in n or "gpt-4" in n
-                    )[:220]
+                    # Prefer vision-looking ids, but never show an empty list -
+                    # a gateway with unusual names still needs to be debuggable.
+                    hints = [n for n in names if any(k in n.lower() for k in ("vision", "vl", "gpt-4", "4o"))] or names
+                    out["detail"] += (
+                        f" - '{config.AI_MODEL}' NOT in list. Available: "
+                        + ", ".join(hints)[:400]
+                    )
                 out["ok"] = True
             else:
                 out["detail"] = f"GET /models -> HTTP {r.status_code}: {r.text[:200]}"

@@ -147,6 +147,21 @@ def run() -> int:
                 page = client.get(f"/diffs/{j['diff_id']}")
                 if page.status_code != 200:
                     failures.append(f"GET /diffs -> {page.status_code}")
+
+                # Clearing an angle must delete its photos and let a fresh
+                # baseline be established by the next capture.
+                rc = client.post(f"/api/views/{sid}/{views[0]['key']}/clear")
+                if rc.status_code != 200 or rc.json().get("removed", 0) < 2:
+                    failures.append(f"clear view: {rc.status_code} {rc.text[:120]}")
+                else:
+                    print(f"clear view        : removed {rc.json()['removed']} photo(s)")
+                r3 = client.post(
+                    "/api/capture",
+                    files={"file": ("b2.jpg", buf.getvalue(), "image/jpeg")},
+                    data={"shelf": str(sid), "view": views[0]["key"]},
+                )
+                if r3.json().get("kind") != "baseline":
+                    failures.append("after clearing, the next capture must become the baseline")
         print("web app           : routes ok")
     except ImportError as exc:
         print(f"web app           : skipped ({exc})")

@@ -20,6 +20,16 @@ all work, and a full `.../chat/completions` URL is accepted as-is.
 
 ## Recipes
 
+### Self-hosted / private OpenAI-compatible gateway
+```ini
+AHADI_AI_BASE_URL=https://ai.effecsa.com/v1
+AHADI_AI_API_KEY=...
+AHADI_AI_MODEL=sfnx
+```
+Model ids on a private gateway often do not look like vision models. `/health` lists
+every id the endpoint actually offers if your configured one is missing — trust that
+output over guesswork, and confirm with a real detection before the demo.
+
 ### OpenAI
 ```ini
 AHADI_AI_BASE_URL=https://api.openai.com/v1

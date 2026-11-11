@@ -173,6 +173,11 @@ def get_shelf(shelf_id: int) -> dict | None:
     )
     for d in s["diffs"]:
         d["summary"] = json.loads(d.get("summary_json") or "{}")
+    s["total_shots"] = one(
+        """SELECT COUNT(*) AS n FROM shots
+           WHERE view_id IN (SELECT id FROM views WHERE shelf_id=?)""",
+        (shelf_id,),
+    )["n"]
     return s
 
 
@@ -184,6 +189,19 @@ def get_view(shelf_id: int, view_key: str) -> dict | None:
         return None
     _decorate_view(v)
     return v
+
+
+def clear_view(view_id: int) -> int:
+    """Delete every shot and diff belonging to a view.
+
+    Returns the number of shots removed. The view row itself stays, so the next
+    photo uploaded becomes the new baseline automatically.
+    """
+    n = one("SELECT COUNT(*) AS n FROM shots WHERE view_id=?", (view_id,))["n"]
+    run("UPDATE views SET baseline_shot_id=NULL WHERE id=?", (view_id,))
+    run("DELETE FROM diffs WHERE view_id=?", (view_id,))
+    run("DELETE FROM shots WHERE view_id=?", (view_id,))
+    return n
 
 
 def _decorate_view(v: dict) -> None:

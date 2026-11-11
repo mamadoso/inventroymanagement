@@ -38,8 +38,11 @@
     <canvas id="canvas" hidden></canvas>
   </div>
 
-  <div id="status" class="status" hidden></div>
+  <div class="row" style="justify-content:center;margin-top:4px">
+    <button class="btn ghost small" id="clearview" type="button">Clear photos for this angle</button>
+  </div>
 
+  <div id="status" class="status" hidden></div>
   <div id="result" class="result" hidden></div>
 
   <p class="muted small">Mode: {{ provider }}. The first photo of an angle becomes its baseline;

@@ -8,6 +8,12 @@
 <div class="split">
   <a class="btn big" href="/capture?shelf={{ shelf.id }}">📷 Open capture screen on phone</a>
   <a class="btn ghost" href="/qr/{{ shelf.id }}">QR code</a>
+  {% if shelf.diff_count or shelf.total_shots %}
+  <form method="post" action="/shelves/{{ shelf.id }}/clear"
+        onsubmit="return confirm('Delete every photo and comparison on this shelf? The next photo on each angle becomes a new baseline.')">
+    <button class="ghost" type="submit">Clear all photos ({{ shelf.total_shots }})</button>
+  </form>
+  {% endif %}
 </div>
 <p class="muted small">Capture link: <code>{{ capture_url }}</code> — open this on any Android or iPhone browser.</p>
 
@@ -61,6 +67,15 @@
     <input type="file" name="file" accept="image/*">
     <button type="submit">{% if v.baseline %}Add capture &amp; compare{% else %}Set as baseline{% endif %}</button>
   </form>
+
+  <div class="row" style="margin-top:8px">
+    {% if v.shot_count %}
+    <form method="post" action="/shelves/{{ shelf.id }}/views/{{ v.key }}/clear"
+          onsubmit="return confirm('Delete all {{ v.shot_count }} photo(s) for {{ v.label }}? The next photo you take becomes the new baseline.')">
+      <button class="ghost small" type="submit">Clear photos for this angle ({{ v.shot_count }})</button>
+    </form>
+    {% endif %}
+  </div>
 </section>
 {% endfor %}
 

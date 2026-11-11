@@ -97,6 +97,24 @@
     resultEl.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  // ---- clear this angle so a new baseline can be set -----------------------
+  const clearBtn = $("clearview");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", async () => {
+      const label = viewSel.options[viewSel.selectedIndex].text;
+      if (!confirm(`Delete all photos for "${label}"? The next photo becomes the new baseline.`)) return;
+      showStatus("Clearing…", true);
+      try {
+        const r = await fetch(`/api/views/${window.SHELF_ID}/${viewSel.value}/clear`, { method: "POST" });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.detail || r.status);
+        showStatus(`Cleared ${j.removed} photo(s). Take the next photo to set a new baseline.`, false);
+      } catch (e) {
+        showStatus("Could not clear: " + e.message, false);
+      }
+    });
+  }
+
   // ---- path 1: native camera app -------------------------------------------
   $("file").addEventListener("change", (ev) => {
     const f = ev.target.files && ev.target.files[0];

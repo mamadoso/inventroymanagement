@@ -227,6 +227,49 @@ def create_view(sid: int, key: str = Form(...), label: str = Form("")):
     return RedirectResponse(f"/shelves/{sid}?msg=View+added", status_code=303)
 
 
+@app.post("/shelves/{sid}/views/{key}/clear")
+def clear_view_photos(sid: int, key: str):
+    """Delete every photo for one angle. The next capture becomes the baseline."""
+    shelf = store.get_shelf(sid)
+    if not shelf:
+        raise HTTPException(404, "shelf not found")
+    view = store.get_view(sid, key)
+    if not view:
+        raise HTTPException(404, f"view '{key}' not found")
+    n = store.clear_view(view["id"])
+    shutil.rmtree(config.IMAGE_DIR / str(sid) / key, ignore_errors=True)
+    return RedirectResponse(
+        f"/shelves/{sid}?msg=Cleared+{n}+photo(s)+from+{key}+-+next+capture+sets+a+new+baseline",
+        status_code=303,
+    )
+
+
+@app.post("/shelves/{sid}/clear")
+def clear_shelf_photos(sid: int):
+    """Delete every photo across all angles of one shelf."""
+    shelf = store.get_shelf(sid)
+    if not shelf:
+        raise HTTPException(404, "shelf not found")
+    n = 0
+    for v in shelf["views"]:
+        n += store.clear_view(v["id"])
+        shutil.rmtree(config.IMAGE_DIR / str(sid) / v["key"], ignore_errors=True)
+    return RedirectResponse(
+        f"/shelves/{sid}?msg=Cleared+{n}+photo(s)+from+all+angles", status_code=303
+    )
+
+
+@app.post("/api/views/{sid}/{key}/clear")
+def api_clear_view(sid: int, key: str):
+    """JSON variant used by the phone capture screen."""
+    view = store.get_view(sid, key)
+    if not view:
+        raise HTTPException(404, f"view '{key}' not found on shelf {sid}")
+    n = store.clear_view(view["id"])
+    shutil.rmtree(config.IMAGE_DIR / str(sid) / key, ignore_errors=True)
+    return {"ok": True, "removed": n, "shelf": sid, "view": key}
+
+
 @app.post("/shelves/{sid}/shots")
 async def upload_form(
     sid: int,
