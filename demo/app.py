@@ -26,6 +26,15 @@ import config
 config.ensure_dirs()
 store.init()
 
+
+def ensure_default_shelf() -> None:
+    """A fresh install must have a working /capture?shelf=1 for the QR link."""
+    if not store.rows("SELECT id FROM shelves LIMIT 1"):
+        store.create_shelf("Shelf 1", "auto-created default")
+
+
+ensure_default_shelf()
+
 app = FastAPI(title="Ahadi Shelf Count Demo", version="0.1")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 app.mount("/files", StaticFiles(directory=str(config.IMAGE_DIR)), name="files")
