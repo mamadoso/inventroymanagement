@@ -100,7 +100,7 @@ def compare(
         ccrops = {j: imaging.crop_centered(cap_img, cap[j]["box"]) for j in unmatched_c}
         scored = sorted(
             (
-                imaging.appearance_similarity(bi, ccrops[j]), i, j
+                (imaging.appearance_similarity(bi, ccrops[j]), i, j)
                 for i, bi in bcrops.items()
                 for j in ccrops
             ),
