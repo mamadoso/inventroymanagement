@@ -89,11 +89,12 @@ def _messages(img: Image.Image) -> list[dict]:
     ]
 
 
-def _payload(img: Image.Image, *, schema: bool, temperature: bool, token_key: str) -> dict:
+def _payload(img: Image.Image, *, schema: bool, temperature: bool, token_key: str,
+             max_tokens: int | None = None) -> dict:
     body: dict = {"model": config.AI_MODEL, "messages": _messages(img)}
     if temperature:
         body["temperature"] = config.AI_TEMPERATURE
-    body[token_key] = config.AI_MAX_TOKENS
+    body[token_key] = max_tokens or config.AI_MAX_TOKENS
     if schema:
         body["response_format"] = {
             "type": "json_schema",
@@ -102,6 +103,21 @@ def _payload(img: Image.Image, *, schema: bool, temperature: bool, token_key: st
     else:
         body["response_format"] = {"type": "json_object"}
     return body
+
+
+def _truncated(text: str) -> bool:
+    """Did the gateway refuse because the answer ran out of tokens?
+
+    Gateways phrase this differently; all of them mean "increase max_tokens".
+    Deliberately narrow: a 400 saying "max_tokens must be <= 4096" also mentions
+    the field name, and escalating there would make things worse.
+    """
+    low = text.lower()
+    return (
+        "finish_reason=length" in low
+        or "incomplete" in low
+        or "truncat" in low
+    )
 
 
 def _post(client: httpx.Client, body: dict) -> httpx.Response:
@@ -149,13 +165,37 @@ def detect(img: Image.Image) -> Detection:
     attempts = max(1, config.AI_RETRIES + 1)
     started = time.perf_counter()
     tried_token_alt = False
+    # Raised automatically whenever a gateway cuts the answer off, up to the cap.
+    max_tokens = config.AI_MAX_TOKENS
+
+    def escalate(why: str) -> bool:
+        """Ask for more room and retry the same variant. False if already capped."""
+        nonlocal max_tokens
+        if max_tokens >= config.AI_MAX_TOKENS_CAP:
+            return False
+        prev = max_tokens
+        max_tokens = min(config.AI_MAX_TOKENS_CAP, max_tokens * 2)
+        errors.append(f"{why} at {prev} tokens -> retrying with {max_tokens}")
+        return True
+
+    def over_budget() -> bool:
+        return (time.perf_counter() - started) > config.AI_DEADLINE
 
     with httpx.Client(timeout=config.REQUEST_TIMEOUT, follow_redirects=True) as client:
         for attempt in range(attempts):
             i = 0
             while i < len(variants):
                 label, schema, temp, token_key = variants[i]
-                body = _payload(img, schema=schema, temperature=temp, token_key=token_key)
+                if over_budget():
+                    errors.append(
+                        f"stopped after {int(time.perf_counter() - started)}s "
+                        f"(AHADI_AI_DEADLINE={int(config.AI_DEADLINE)}s)"
+                    )
+                    break
+                body = _payload(
+                    img, schema=schema, temperature=temp, token_key=token_key,
+                    max_tokens=max_tokens,
+                )
                 try:
                     resp = _post(client, body)
                 except httpx.HTTPError as exc:
@@ -163,45 +203,56 @@ def detect(img: Image.Image) -> Detection:
                     i += 1
                     continue
 
-                if resp.status_code in (400, 404, 422):
+                if resp.status_code in (401, 403):
+                    raise VisionError(
+                        f"HTTP {resp.status_code} - AHADI_AI_API_KEY is wrong, lacks "
+                        f"access, or is missing for {config.normalized_base_url()}"
+                    )
+
+                if resp.status_code >= 400:
                     detail = resp.text[:400]
                     low = detail.lower()
+                    # "structured output was incomplete (finish_reason=length)" is a
+                    # 502 from some gateways. More tokens fixes it; switching to a
+                    # weaker response_format would truncate exactly the same way.
+                    if _truncated(detail) and escalate(f"{label}: output truncated"):
+                        continue
                     if (
                         token_key == "max_tokens"
                         and not tried_token_alt
                         and ("max_token" in low or "max_completion" in low)
+                        and not _truncated(detail)
                     ):
                         tried_token_alt = True
                         variants[i] = [label, schema, temp, "max_completion_tokens"]
                         errors.append(f"{label}: max_tokens rejected, using max_completion_tokens")
                         continue  # retry this same variant with the other field name
                     errors.append(f"{label}: HTTP {resp.status_code} {detail}")
+                    if resp.status_code == 429:
+                        time.sleep(min(10.0, 2.0 * (attempt + 1)))
                     if label == "plain":
                         raise VisionError(
                             f"endpoint rejected the request ({resp.status_code}). "
                             f"Check AHADI_AI_MODEL / AHADI_AI_BASE_URL. Detail: {detail}"
                         )
+                    # 5xx and 4xx both mean "this gateway does not accept that
+                    # shape" often enough that degrading is worth the extra call;
+                    # the old code broke out of the loop and gave up on a 502.
                     i += 1
                     continue
-                if resp.status_code in (401, 403):
-                    raise VisionError(
-                        f"HTTP {resp.status_code} - AHADI_AI_API_KEY is wrong, lacks "
-                        f"access, or is missing for {config.normalized_base_url()}"
-                    )
-                if resp.status_code == 429:
-                    errors.append("429 rate limited")
-                    time.sleep(min(10.0, 2.0 * (attempt + 1)))
-                    break
-                if resp.status_code >= 400:
-                    errors.append(f"{label}: HTTP {resp.status_code} {resp.text[:300]}")
-                    break
 
                 try:
                     rj = resp.json()
-                    parsed = parse_json_object(_extract(rj))
+                    content = _extract(rj)
+                    finish = ((rj.get("choices") or [{}])[0] or {}).get("finish_reason") or ""
+                    parsed = parse_json_object(content)
                 except (VisionError, ValueError) as exc:
                     errors.append(f"{label}: {exc}")
+                    if escalate(f"{label}: unparseable answer"):
+                        continue
                     i += 1
+                    continue
+                if finish == "length" and escalate(f"{label}: finish_reason=length"):
                     continue
 
                 det = build_detection(
@@ -219,15 +270,17 @@ def detect(img: Image.Image) -> Detection:
                         "items": len(det.items),
                         "quality": det.quality,
                         "latency_ms": det.latency_ms,
+                        "max_tokens": max_tokens,
+                        "notes": det.notes[:200],
                         "usage": usage,
                     }
                 )
                 return det
-            if attempt < attempts - 1:
+            if attempt < attempts - 1 and not over_budget():
                 time.sleep(1.0)
 
     _log({"ts": int(time.time()), "ok": False, "base": config.normalized_base_url(),
-          "model": config.AI_MODEL, "errors": errors})
+          "model": config.AI_MODEL, "max_tokens": max_tokens, "errors": errors})
     raise VisionError(" | ".join(errors[-4:]) or "AI call failed")
 
 

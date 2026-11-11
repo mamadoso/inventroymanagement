@@ -18,11 +18,23 @@
   if (saved && [...viewSel.options].some((o) => o.value === saved)) viewSel.value = saved;
   viewSel.addEventListener("change", () => localStorage.setItem("ahadi.view", viewSel.value));
 
+  let tick = null;
   function showStatus(text, busy) {
     statusEl.hidden = false;
     resultEl.hidden = true;
     statusEl.className = "status" + (busy ? " busy" : "");
-    statusEl.textContent = text;
+    if (tick) { clearInterval(tick); tick = null; }
+    if (!busy) { statusEl.textContent = text; return; }
+    // A vision call legitimately takes 10-60s. Without a running clock the page
+    // looks frozen and people reload it, which is what "I think it timed out"
+    // usually is.
+    const t0 = Date.now();
+    statusEl.textContent = text + " ... 0s";
+    tick = setInterval(() => {
+      const s = Math.round((Date.now() - t0) / 1000);
+      statusEl.textContent = text + " ... " + s + "s" +
+        (s >= 25 ? " (still waiting on the AI - this can take a minute)" : "");
+    }, 1000);
   }
 
   function esc(s) {

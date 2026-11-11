@@ -90,6 +90,23 @@ def run() -> int:
     if d2["counts"]["missing"] != 0:
         failures.append(f"move must not read as missing (this is the false-theft bug)")
 
+    # A gateway that runs out of max_tokens returns JSON cut off mid-list. That is
+    # recoverable - keep the complete items - but it must never look like a clean
+    # count, or a truncated shelf silently reports fewer watches than exist.
+    from vision.base import build_detection, parse_json_object
+
+    cut = ('{"total": 9, "items": [{"box": [0.1, 0.2, 0.1, 0.1], "desc": "steel"},'
+           ' {"box": [0.5, 0.6, 0.1')
+    try:
+        salvaged = build_detection(parse_json_object(cut), "test", "test", 0)
+        if salvaged.total != 1:
+            failures.append(f"truncated JSON should salvage 1 complete item, got {salvaged.total}")
+        if salvaged.quality == "good":
+            failures.append("a truncated detection must not be reported as quality=good")
+        print(f"truncated json    : salvaged {salvaged.total} item, quality={salvaged.quality}")
+    except Exception as exc:
+        failures.append(f"truncated JSON repair raised {exc!r}")
+
     # Persistence + report rendering, still without a web server.
     sid = store.create_shelf("selftest")
     views = store.get_shelf(sid)["views"]

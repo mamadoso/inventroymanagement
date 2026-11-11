@@ -101,6 +101,47 @@ def sanitize_items(raw) -> list[dict]:
     return out
 
 
+def _repair_truncated(text: str) -> str | None:
+    """Close a JSON object that was cut off mid-output.
+
+    A gateway that runs out of max_tokens stops in the middle of the items array.
+    Everything up to the last complete element is still valid and useful, so keep
+    it and drop the partial tail rather than throwing the whole answer away.
+    Returns None when not even one complete element can be salvaged.
+    """
+    start = text.find("{")
+    if start < 0:
+        return None
+    stack: list[str] = []
+    in_str = esc = False
+    cut = -1
+    for i, ch in enumerate(text[start:], start):
+        if esc:
+            esc = False
+            continue
+        if ch == "\\":
+            esc = True
+            continue
+        if in_str:
+            if ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in "{[":
+            stack.append(ch)
+        elif ch in "}]":
+            if not stack:
+                return None
+            stack.pop()
+            # back to { + [ means one whole array element just finished
+            if stack[:2] == ["{", "["] and len(stack) == 2:
+                cut = i + 1
+    if cut < 0:
+        return None
+    return text[start:cut] + "]}"
+
+
 def parse_json_object(text: str) -> dict:
     if not text:
         raise VisionError("empty model response")
@@ -111,10 +152,24 @@ def parse_json_object(text: str) -> dict:
     try:
         return json_loads(text)
     except ValueError:
-        m = _JSON_LOOSE.search(text)
-        if not m:
-            raise VisionError(f"model did not return JSON: {text[:200]}")
-        return json_loads(m.group(0))
+        pass
+    m = _JSON_LOOSE.search(text)
+    if m:
+        try:
+            return json_loads(m.group(0))
+        except ValueError:
+            pass
+    # Last resort: the answer was probably truncated by the token limit. Salvage
+    # the complete items and flag it so nobody trusts the resulting count.
+    fixed = _repair_truncated(m.group(0) if m else text)
+    if fixed:
+        try:
+            obj = json_loads(fixed)
+            obj["_truncated"] = True
+            return obj
+        except ValueError:
+            pass
+    raise VisionError(f"model did not return valid JSON: {text[:200]}")
 
 
 def json_loads(text: str) -> dict:
@@ -127,6 +182,8 @@ def json_loads(text: str) -> dict:
 
 
 def build_detection(parsed: dict, provider: str, model: str, latency_ms: int) -> Detection:
+    # Set by parse_json_object when it had to close a cut-off answer.
+    truncated = bool(parsed.pop("_truncated", False))
     items = sanitize_items(parsed.get("items"))
     quality = str(parsed.get("quality") or "good").lower().strip()
     if quality not in ("good", "glare", "blur", "too_far", "dark", "other"):
@@ -138,11 +195,20 @@ def build_detection(parsed: dict, provider: str, model: str, latency_ms: int) ->
     # Fail closed on a count/box mismatch: trust the boxes, flag it for review.
     if total != len(items):
         quality = quality if quality != "good" else "other"
+    notes = str(parsed.get("notes") or "")
+    if truncated:
+        # A truncated list always under-counts, and `total` is usually the key
+        # that got cut off, so the mismatch check above cannot catch it.
+        quality = "other"
+        notes = (notes + " | " if notes else "") + (
+            f"output truncated at the token limit - only {len(items)} items recovered, "
+            "raise AHADI_AI_MAX_TOKENS"
+        )
     return Detection(
         items=items,
         total=len(items),
         quality=quality,
-        notes=str(parsed.get("notes") or "")[:300],
+        notes=notes[:300],
         provider=provider,
         model=model,
         latency_ms=latency_ms,

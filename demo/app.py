@@ -25,6 +25,7 @@ import config
 
 config.ensure_dirs()
 store.init()
+store.reap_stale_pending()
 
 
 def ensure_default_shelf() -> None:

@@ -191,6 +191,22 @@ def get_view(shelf_id: int, view_key: str) -> dict | None:
     return v
 
 
+def reap_stale_pending() -> int:
+    """Mark shots left in `pending` by an interrupted request.
+
+    A shot is written as pending before the AI call and updated after it, so a
+    restart, a crash or a proxy timeout strands rows in pending forever. They
+    look like work in progress on the shelf page when nothing is running.
+    """
+    rows_ = rows("SELECT id FROM shots WHERE status='pending'")
+    if rows_:
+        run(
+            "UPDATE shots SET status='failed', error='interrupted before the AI call "
+            "finished (restart, crash or proxy timeout)' WHERE status='pending'"
+        )
+    return len(rows_)
+
+
 def clear_view(view_id: int) -> int:
     """Delete every shot and diff belonging to a view.
 

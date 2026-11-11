@@ -53,11 +53,20 @@ AI_BASE_URL = _env(
 AI_API_KEY = _env("AHADI_AI_API_KEY", "OPENAI_API_KEY")
 AI_MODEL = _env("AHADI_AI_MODEL", "OPENAI_MODEL") or "gpt-4o"
 
-# max_tokens for the detection call. Small watch grids need room for many boxes.
-AI_MAX_TOKENS = int(_env("AHADI_AI_MAX_TOKENS", default="1800"))
+# max_tokens for the detection call. Each watch costs roughly 100-140 tokens of
+# JSON (box + description), so a 12-watch shelf already needs ~1600. Too low and
+# the model's output is cut off mid-JSON, which is a hard parse failure, not a
+# soft one. If the response is ever truncated we double this and retry, up to the
+# cap below.
+AI_MAX_TOKENS = int(_env("AHADI_AI_MAX_TOKENS", default="4000"))
+AI_MAX_TOKENS_CAP = int(_env("AHADI_AI_MAX_TOKENS_CAP", default="12000"))
 AI_TEMPERATURE = float(_env("AHADI_AI_TEMPERATURE", default="0"))
 AI_SEND_SCHEMA = _env("AHADI_AI_JSON_SCHEMA", default="1") not in ("0", "false", "no")
 AI_RETRIES = int(_env("AHADI_AI_RETRIES", default="2"))
+# Wall-clock budget for one detection, covering every fallback variant and retry.
+# Must stay below the nginx proxy_read_timeout (180s) or the browser gives up
+# while the server is still working, which looks like a hang rather than an error.
+AI_DEADLINE = float(_env("AHADI_AI_DEADLINE", default="120"))
 
 # --------------------------------------------------------------- image / perf
 # Images are downscaled to this max side before being sent to the model.
@@ -65,7 +74,7 @@ AI_RETRIES = int(_env("AHADI_AI_RETRIES", default="2"))
 MAX_SIDE = int(_env("AHADI_MAX_SIDE", default="1536"))
 JPEG_QUALITY = int(_env("AHADI_JPEG_QUALITY", default="86"))
 THUMB_SIDE = int(_env("AHADI_THUMB_SIDE", default="420"))
-REQUEST_TIMEOUT = float(_env("AHADI_TIMEOUT", default="120"))
+REQUEST_TIMEOUT = float(_env("AHADI_TIMEOUT", default="90"))
 MAX_UPLOAD_MB = int(_env("AHADI_MAX_UPLOAD_MB", default="25"))
 
 # ------------------------------------------------------------- matching tuning
