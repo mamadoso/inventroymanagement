@@ -72,6 +72,10 @@ MAX_UPLOAD_MB = int(_env("AHADI_MAX_UPLOAD_MB", default="25"))
 MATCH_MIN_SCORE = float(_env("AHADI_MATCH_MIN", default="0.40"))
 MOVED_MIN_APPEAR = float(_env("AHADI_MOVED_MIN", default="0.72"))
 SAME_OBJECT_APPEAR = float(_env("AHADI_SAME_OBJECT_MIN", default="0.62"))
+# Two detections must be at least this spatially close to be considered the same
+# *place*. Below it they are left unmatched so the move pass can pair them -
+# otherwise a moved watch matches its new position and reports as "unchanged".
+SAME_PLACE_SPATIAL = float(_env("AHADI_SAME_PLACE_MIN", default="0.45"))
 
 # ------------------------------------------------------------------------ web
 PUBLIC_BASE = _env("AHADI_PUBLIC_BASE")

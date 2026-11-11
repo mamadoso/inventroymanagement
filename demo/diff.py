@@ -75,6 +75,11 @@ def compare(
             continue
         if score < config.MATCH_MIN_SCORE:
             continue
+        # Too far apart to be the same place: leave both unmatched so the move
+        # pass below can pair them. Matching them here would hide a moved watch
+        # as "unchanged" in its new position.
+        if _spatial(base[i]["box"], cap[j]["box"]) < config.SAME_PLACE_SPATIAL:
+            continue
         used_b.add(i)
         used_c.add(j)
         if ap >= config.SAME_OBJECT_APPEAR:
