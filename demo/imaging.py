@@ -95,7 +95,7 @@ def hamming(a: int, b: int) -> int:
 
 def _hist(img: Image.Image) -> np.ndarray:
     hsv = img.convert("HSV").resize((64, 64), Image.BILINEAR)
-    arr = np.asarray(hsv)
+    arr = np.asarray(hsv, dtype=np.int32)  # int32: the bucket multipliers overflow uint8
     q = np.stack(
         [
             (arr[..., 0] * 6) // 256,
