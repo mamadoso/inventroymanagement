@@ -45,7 +45,8 @@ def detect(img: Image.Image, model: str = "heuristic-grid") -> Detection:
     g = img.convert("L").filter(ImageFilter.GaussianBlur(1))
     arr = np.asarray(g, dtype=np.float64)
     rgb = np.asarray(img.convert("RGB"))
-    rows, cols = _grid_dims(img.width, img.height)    ch, cw = arr.shape[0] // rows, arr.shape[1] // cols
+    rows, cols = _grid_dims(img.width, img.height)
+    ch, cw = arr.shape[0] // rows, arr.shape[1] // cols
 
     activity: list[tuple[float, int, int]] = []
     for r in range(rows):
