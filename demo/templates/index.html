@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="hero">
+  <h1>Photograph a shelf. Get the changes.</h1>
+  <p>Point a phone camera at a watch shelf. The system counts the watches, compares the
+     photo with the previous accepted photo of that shelf, and reports exactly what moved,
+     what is missing and what is new.</p>
+</div>
+
+<section class="card">
+  <h2>New shelf</h2>
+  <form method="post" action="/shelves" class="row">
+    <input name="name" placeholder="Shelf name, e.g. Vitrine A" required>
+    <input name="note" placeholder="Location note (optional)">
+    <button type="submit">Create</button>
+  </form>
+  <p class="muted">Each shelf gets three capture angles by default: front, left, right.</p>
+</section>
+
+<section class="card">
+  <h2>Shelves</h2>
+  {% if not shelves %}
+    <p class="muted">No shelves yet — create one above.</p>
+  {% endif %}
+  {% for s in shelves %}
+    <div class="shelf-row">
+      <a class="shelf-name" href="/shelves/{{ s.id }}">{{ s.name }}</a>
+      <span class="pill {{ s.summary.worst }}">{{ s.summary.worst }}</span>
+      <div class="viewdots">
+        {% for v in s.summary.views %}
+          <span class="dot {{ v.state }}" title="{{ v.label }}: {{ v.text }}">{{ v.key }}</span>
+        {% endfor %}
+      </div>
+      <span class="muted small">{{ s.diff_count }} comparisons</span>
+      <a class="btn small" href="/capture?shelf={{ s.id }}">Capture</a>
+      <a class="btn small ghost" href="/qr/{{ s.id }}">QR</a>
+    </div>
+  {% endfor %}
+</section>
+
+{% if recent %}
+<section class="card">
+  <h2>Recent comparisons</h2>
+  <table class="grid">
+    <tr><th>When</th><th>Shelf</th><th>View</th><th>Count</th><th>Result</th><th></th></tr>
+    {% for d in recent %}
+      <tr>
+        <td class="muted small">{{ d.created_at[:16].replace('T',' ') }}</td>
+        <td>{{ d.shelf.name if d.shelf else '' }}</td>
+        <td>{{ d.view.label if d.view else '' }}</td>
+        <td>{{ d.base_total }} → <b>{{ d.cap_total }}</b></td>
+        <td>
+          {% set c = d.summary.counts %}
+          {% if c.missing %}<span class="pill bad">{{ c.missing }} missing</span>{% endif %}
+          {% if c.new %}<span class="pill warn">{{ c.new }} new</span>{% endif %}
+          {% if c.swapped %}<span class="pill warn">{{ c.swapped }} swapped</span>{% endif %}
+          {% if c.moved %}<span class="pill info">{{ c.moved }} moved</span>{% endif %}
+          {% if not (c.missing or c.new or c.swapped or c.moved) %}<span class="pill ok">no change</span>{% endif %}
+        </td>
+        <td><a class="btn small ghost" href="/diffs/{{ d.id }}">open</a></td>
+      </tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+
+<section class="card danger-zone">
+  <h2>Demo reset</h2>
+  <p class="muted">Deletes every shelf, photo and comparison so you can start a clean demo.</p>
+  <form method="post" action="/reset" onsubmit="return confirm('Delete all demo data?')">
+    <button class="ghost" type="submit">Clear all data</button>
+  </form>
+</section>
+{% endblock %}

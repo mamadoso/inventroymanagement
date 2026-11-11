@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Report — {{ d.shelf.name }} {{ d.view.label }}{% endblock %}
+{% block body %}
+<div class="crumbs">
+  <a href="/">Shelves</a> / <a href="/shelves/{{ d.shelf.id }}">{{ d.shelf.name }}</a> /
+  <b>{{ d.view.label }}</b>
+</div>
+
+<div class="headline {{ d.state }}">
+  <div class="big-count">
+    <span class="from">{{ d.base_total }}</span><span class="arrow">→</span><span class="to">{{ d.cap_total }}</span>
+    <span class="unit">watches</span>
+  </div>
+  <div class="headline-text">{{ d.headline }}</div>
+  <div class="muted small">{{ d.created_at[:16].replace('T',' ') }} · {{ provider }}</div>
+</div>
+
+{% set c = d.summary.counts %}
+<div class="statgrid">
+  <div class="stat ok"><b>{{ c.unchanged }}</b><span>unchanged</span></div>
+  <div class="stat bad"><b>{{ c.missing }}</b><span>missing</span></div>
+  <div class="stat warn"><b>{{ c.new }}</b><span>new</span></div>
+  <div class="stat warn"><b>{{ c.swapped }}</b><span>swapped</span></div>
+  <div class="stat info"><b>{{ c.moved }}</b><span>moved</span></div>
+</div>
+
+<div class="compare">
+  {% if d.annot_base_url %}
+    <figure><figcaption>Baseline — {{ d.baseline.total }} detected</figcaption>
+      <img src="{{ d.annot_base_url }}" alt="annotated baseline"></figure>
+  {% else %}
+    <figure><figcaption>Baseline</figcaption><img src="{{ d.baseline_url }}" alt="baseline"></figure>
+  {% endif %}
+  {% if d.annot_cap_url %}
+    <figure><figcaption>This photo — {{ d.capture.total }} detected</figcaption>
+      <img src="{{ d.annot_cap_url }}" alt="annotated capture"></figure>
+  {% else %}
+    <figure><figcaption>This photo</figcaption><img src="{{ d.capture_url }}" alt="capture"></figure>
+  {% endif %}
+</div>
+
+<ul class="legend">
+  <li><i class="sw ok"></i> unchanged</li>
+  <li><i class="sw bad"></i> missing (dashed = shown on baseline)</li>
+  <li><i class="sw new"></i> new item</li>
+  <li><i class="sw moved"></i> moved to another position</li>
+  <li><i class="sw warn"></i> swapped (different object in same place)</li>
+</ul>
+
+<section class="card">
+  <h2>Changes</h2>
+  {% if not d.summary.changes %}
+    <p class="pill ok">Nothing changed on this angle.</p>
+  {% endif %}
+  <table class="grid">
+    {% for ch in d.summary.changes %}
+      <tr>
+        <td><span class="pill {{ 'bad' if ch.kind=='missing' else ('new' if ch.kind=='new' else 'warn') }}">{{ ch.kind }}</span></td>
+        <td>position <b>#{{ ch.n }}</b>{% if ch.to %} → <b>#{{ ch.to }}</b>{% endif %}</td>
+        <td class="muted">{{ ch.desc }}</td>
+      </tr>
+    {% endfor %}
+  </table>
+  {% if d.capture.quality and d.capture.quality != 'good' %}
+    <p class="banner warn">Photo quality flagged as <b>{{ d.capture.quality }}</b>.
+      A retake gives a more trustworthy result.</p>
+  {% endif %}
+  {% if d.capture.notes %}<p class="muted small">Model note: {{ d.capture.notes }}</p>{% endif %}
+</section>
+
+<div class="split">
+  <form method="post" action="/shots/{{ d.capture_shot_id }}/baseline">
+    <button class="btn" type="submit">Accept this photo as the new baseline</button>
+  </form>
+  <a class="btn ghost" href="/capture?shelf={{ d.shelf_id }}&view={{ d.view.key }}">Capture again</a>
+  <a class="btn ghost" href="/shelves/{{ d.shelf_id }}">Back to shelf</a>
+</div>
+<p class="muted small">Accepting sets the comparison reference. The system never silently
+   overwrites a baseline — that is what keeps error from drifting into the record.</p>
+{% endblock %}

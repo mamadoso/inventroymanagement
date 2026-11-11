@@ -1,0 +1,19 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+
+# demo runtime state
+demo/data/
+*.sqlite3
+ai_calls.jsonl
+
+# secrets - never commit a real key
+.env
+demo/.env
+
+# editors / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

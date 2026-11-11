@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1017">
+  <title>{% block title %}Ahadi Shelf Count{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">⌚ <b>Ahadi</b> Shelf&nbsp;Count</a>
+  <nav>
+    <a href="/capture?shelf=1">Capture</a>
+    <a href="/health">AI&nbsp;status</a>
+  </nav>
+</header>
+
+{% if msg %}<div class="flash">{{ msg }}</div>{% endif %}
+{% if mock_mode is defined and mock_mode %}
+  <div class="banner mock">
+    Offline heuristic mode — no AI key configured. Set <code>AHADI_AI_API_KEY</code> in
+    <code>demo/.env</code> for real vision. <a href="/health">AI status →</a>
+  </div>
+{% endif %}
+
+<main>
+{% block body %}{% endblock %}
+</main>
+
+<footer>
+  <span>Demo build · counts and change detection only — no brand or model identification</span>
+  <span>{{ provider | default('') }}</span>
+</footer>
+</body>
+</html>

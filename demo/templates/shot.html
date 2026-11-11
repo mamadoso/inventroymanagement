@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Photo {{ shot.id }}{% endblock %}
+{% block body %}
+<div class="crumbs">
+  <a href="/">Shelves</a> / <b>photo #{{ shot.id }}</b>
+</div>
+<h1>{{ shot.kind }} · {{ shot.view.label }}</h1>
+<p class="muted small">
+  {{ shot.created_at[:19].replace('T',' ') }} ·
+  {{ shot.width }}×{{ shot.height }} ·
+  status <b>{{ shot.status }}</b> ·
+  {{ shot.provider }}/{{ shot.model }} · {{ shot.latency_ms }} ms
+</p>
+
+{% if shot.status == 'failed' %}
+  <div class="banner mock">Detection failed: <code>{{ shot.error }}</code></div>
+{% endif %}
+
+<img class="full" src="{{ shot.url }}" alt="photo">
+
+<section class="card">
+  <h2>{{ shot.total }} watches detected</h2>
+  {% if shot.quality and shot.quality != 'good' %}
+    <p class="pill warn">image quality: {{ shot.quality }}</p>
+  {% endif %}
+  <table class="grid">
+    <tr><th>#</th><th>box (x, y, w, h normalised)</th><th>description</th><th>conf</th></tr>
+    {% for it in shot['items'] %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td class="mono small">{{ it.box | join(', ') }}</td>
+        <td class="muted">{{ it.desc }}</td>
+        <td>{{ it.conf }}</td>
+      </tr>
+    {% endfor %}
+  </table>
+  {% if shot.notes %}<p class="muted small">note: {{ shot.notes }}</p>{% endif %}
+</section>
+
+<div class="split">
+  <form method="post" action="/shots/{{ shot.id }}/baseline">
+    <button class="btn" type="submit">Set as baseline for this angle</button>
+  </form>
+  <a class="btn ghost" href="/shelves/{{ shot.view.shelf_id }}">Back to shelf</a>
+</div>
+{% endblock %}

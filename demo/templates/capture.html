@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Capture — {{ shelf.name }}{% endblock %}
+{% block body %}
+<div class="capwrap">
+  <div class="crumbs"><a href="/shelves/{{ shelf.id }}">{{ shelf.name }}</a> / <b>capture</b></div>
+
+  <label class="field">
+    <span>Angle</span>
+    <select id="view">
+      {% for k in views %}
+        <option value="{{ k }}" {% if k == view %}selected{% endif %}>{{ view_labels[k] }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <div class="guide">
+    <div class="guide-box"><span>line the shelf up inside this frame</span></div>
+    <p class="muted small">Stand in the same spot as the baseline photo. Keep the whole shelf inside
+       the box. Avoid glare — tilt slightly if you see your own reflection.</p>
+  </div>
+
+  <div class="capbtns">
+    <label class="btn big shoot">
+      📷 Take photo
+      <input type="file" id="file" accept="image/*" capture="environment">
+    </label>
+    {% if request.url.scheme == 'https' or request.client.host == '127.0.0.1' %}
+      <button class="btn big ghost" id="live" type="button">🎥 Live camera</button>
+    {% endif %}
+  </div>
+
+  <div id="livebox" class="livebox" hidden>
+    <video id="video" playsinline muted autoplay></video>
+    <div class="livebtns">
+      <button class="btn big" id="shutter" type="button">Shutter</button>
+      <button class="btn ghost" id="closelive" type="button">Close</button>
+    </div>
+    <canvas id="canvas" hidden></canvas>
+  </div>
+
+  <div id="status" class="status" hidden></div>
+
+  <div id="result" class="result" hidden></div>
+
+  <p class="muted small">Mode: {{ provider }}. The first photo of an angle becomes its baseline;
+     every later photo is compared against it.</p>
+</div>
+<script>window.SHELF_ID = {{ shelf.id }};</script>
+<script src="/static/capture.js"></script>
+{% endblock %}

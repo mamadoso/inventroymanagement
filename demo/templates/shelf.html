@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ shelf.name }} — Ahadi Shelf Count{% endblock %}
+{% block body %}
+<div class="crumbs"><a href="/">Shelves</a> / <b>{{ shelf.name }}</b></div>
+<h1>{{ shelf.name }}</h1>
+{% if shelf.note %}<p class="muted">{{ shelf.note }}</p>{% endif %}
+
+<div class="split">
+  <a class="btn big" href="/capture?shelf={{ shelf.id }}">📷 Open capture screen on phone</a>
+  <a class="btn ghost" href="/qr/{{ shelf.id }}">QR code</a>
+</div>
+<p class="muted small">Capture link: <code>{{ capture_url }}</code> — open this on any Android or iPhone browser.</p>
+
+{% for v in shelf.views %}
+<section class="card view {{ v.last_diff.summary and 'changed' or '' }}">
+  <div class="view-head">
+    <h2>{{ v.label }} <span class="muted small">({{ v.key }})</span></h2>
+    {% if v.last_diff %}
+      {% set c = v.last_diff.summary.counts %}
+      {% if c.missing %}<span class="pill bad">{{ c.missing }} missing</span>
+      {% elif c.new or c.swapped %}<span class="pill warn">changed</span>
+      {% elif c.moved %}<span class="pill info">moved</span>
+      {% else %}<span class="pill ok">no change</span>{% endif %}
+    {% elif v.baseline %}
+      <span class="pill idle">baseline only</span>
+    {% else %}
+      <span class="pill idle">not set up</span>
+    {% endif %}
+  </div>
+
+  <div class="thumbs">
+    <figure>
+      <figcaption>Baseline {% if v.baseline %}<span class="muted small">· {{ v.baseline.total }} watches</span>{% endif %}</figcaption>
+      {% if v.baseline_url %}<a href="/shots/{{ v.baseline.id }}"><img src="{{ v.baseline_url }}" loading="lazy" alt="baseline"></a>
+      {% else %}<div class="missing-img">no baseline photo</div>{% endif %}
+    </figure>
+    <figure>
+      <figcaption>Last capture {% if v.last_capture %}<span class="muted small">· {{ v.last_capture.total }} watches</span>{% endif %}</figcaption>
+      {% if v.last_capture_url %}<a href="/shots/{{ v.last_capture.id }}"><img src="{{ v.last_capture_url }}" loading="lazy" alt="capture"></a>
+      {% else %}<div class="missing-img">no capture yet</div>{% endif %}
+    </figure>
+    <figure>
+      <figcaption>Result</figcaption>
+      {% if v.last_diff %}
+        {% if v.last_diff.annot_base_url %}<a href="/diffs/{{ v.last_diff.id }}"><img src="{{ v.last_diff.annot_base_url }}" loading="lazy" alt="annotated baseline"></a>
+        {% else %}<a href="/diffs/{{ v.last_diff.id }}"><img src="{{ v.last_diff.annot_cap_url }}" loading="lazy" alt="annotated"></a>{% endif %}
+      {% else %}<div class="missing-img">—</div>{% endif %}
+    </figure>
+  </div>
+
+  {% if v.last_diff %}
+    <p class="verdict {{ v.last_diff.summary and '' }}">
+      {{ v.baseline.total }} → {{ v.last_capture.total }} watches ·
+      <a href="/diffs/{{ v.last_diff.id }}">open full report</a>
+    </p>
+  {% endif %}
+
+  <form method="post" action="/shelves/{{ shelf.id }}/shots" enctype="multipart/form-data" class="row upload">
+    <input type="hidden" name="view" value="{{ v.key }}">
+    <input type="hidden" name="source" value="upload">
+    <input type="file" name="file" accept="image/*">
+    <button type="submit">{% if v.baseline %}Add capture &amp; compare{% else %}Set as baseline{% endif %}</button>
+  </form>
+</section>
+{% endfor %}
+
+<section class="card">
+  <h2>Add another angle</h2>
+  <form method="post" action="/shelves/{{ shelf.id }}/views" class="row">
+    <input name="key" placeholder="key, e.g. top" required>
+    <input name="label" placeholder="label, e.g. Top-down">
+    <button type="submit">Add view</button>
+  </form>
+</section>
+{% endblock %}

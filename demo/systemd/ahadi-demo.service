@@ -1,0 +1,26 @@
+[Unit]
+Description=Ahadi shelf-count demo
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# sudo useradd -r -m -s /usr/sbin/nologin ahadi
+User=ahadi
+Group=ahadi
+WorkingDirectory=/opt/ahadi/demo
+Environment=AHADI_DATA=/var/lib/ahadi-demo
+EnvironmentFile=-/opt/ahadi/demo/.env
+ExecStart=/opt/ahadi/demo/.venv/bin/uvicorn app:app --host 0.0.0.0 --port 8080
+Restart=always
+RestartSec=3
+
+# Keep the process contained: it only needs its own dirs.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/ahadi-demo
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
