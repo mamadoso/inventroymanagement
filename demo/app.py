@@ -292,10 +292,20 @@ def make_baseline(sid: int):
 
 
 @app.get("/capture", response_class=HTMLResponse)
-def capture_page(request: Request, shelf: int = 1, view: str = "front"):
-    s = store.get_shelf(shelf)
+def capture_page(request: Request, shelf: int = 0, view: str = ""):
+    """Capture screen. Falls back to the first shelf / first view so a stale or
+    hand-typed link (and the printed QR) never dead-ends on a fresh install."""
+    s = store.get_shelf(shelf) if shelf else None
     if not s:
-        raise HTTPException(404, "shelf not found")
+        first = store.rows("SELECT id FROM shelves ORDER BY id LIMIT 1")
+        if not first:
+            raise HTTPException(404, "no shelves configured yet")
+        s = store.get_shelf(first[0]["id"])
+    valid = [v["key"] for v in s["views"]]
+    if not valid:
+        raise HTTPException(404, f"shelf {s['id']} has no views")
+    if view not in valid:
+        view = valid[0]
     return templates.TemplateResponse(
         request,
         "capture.html",
@@ -305,7 +315,7 @@ def capture_page(request: Request, shelf: int = 1, view: str = "front"):
             "view": view,
             "provider": vision.provider_label(),
             "mock_mode": config.active_provider() == "mock",
-            "views": [v["key"] for v in s["views"]],
+            "views": valid,
             "view_labels": {v["key"]: v["label"] for v in s["views"]},
         },
     )
@@ -445,6 +455,12 @@ def qr(sid: int, request: Request):
         import segno
     except ImportError:
         raise HTTPException(404, "segno not installed - pip install segno")
+    target = store.get_shelf(sid)
+    if not target:
+        first = store.rows("SELECT id FROM shelves ORDER BY id LIMIT 1")
+        if not first:
+            raise HTTPException(404, "no shelves configured yet")
+        sid = first[0]["id"]
     buf = io.BytesIO()
     segno.make(f"{config.public_url(request)}/capture?shelf={sid}", error="m").save(
         buf, kind="png", scale=8, border=2
