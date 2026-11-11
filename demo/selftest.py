@@ -26,7 +26,7 @@ import imaging
 import store
 import vision
 
-CELLS = [(r, c) for r in range(3) for c in range(6)]
+CELS = [(r, c) for r in range(3) for c in range(6)]
 ROWS, COLS = 3, 6
 W, H = 1200, 800
 
