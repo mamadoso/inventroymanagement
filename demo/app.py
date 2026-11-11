@@ -161,6 +161,7 @@ def index(request: Request):
     for s in shelves:
         s["summary"] = shelf_summary(s)
     return templates.TemplateResponse(
+        request,
         "index.html",
         {
             "request": request,
@@ -195,6 +196,7 @@ def shelf_page(request: Request, sid: int):
             d["annot_base_url"] = file_url(d["annot_base"])
             d["annot_cap_url"] = file_url(d["annot_cap"])
     return templates.TemplateResponse(
+        request,
         "shelf.html",
         {
             "request": request,
@@ -246,6 +248,7 @@ def diff_page(request: Request, did: int):
     d["capture_url"] = file_url(d["capture"]["filename"])
     d["state"], d["headline"] = diffmod.verdict(d["summary"])
     return templates.TemplateResponse(
+        request,
         "diff.html",
         {
             "request": request,
@@ -263,6 +266,7 @@ def shot_page(request: Request, sid: int):
         raise HTTPException(404, "shot not found")
     shot["url"] = file_url(shot["filename"])
     return templates.TemplateResponse(
+        request,
         "shot.html", {"request": request, "shot": shot, "provider": vision.provider_label()}
     )
 
@@ -284,6 +288,7 @@ def capture_page(request: Request, shelf: int = 1, view: str = "front"):
     if not s:
         raise HTTPException(404, "shelf not found")
     return templates.TemplateResponse(
+        request,
         "capture.html",
         {
             "request": request,
@@ -394,6 +399,7 @@ def health_check(force: bool = False) -> dict:
 @app.get("/health", response_class=HTMLResponse)
 def health_page(request: Request):
     return templates.TemplateResponse(
+        request,
         "health.html",
         {
             "request": request,
