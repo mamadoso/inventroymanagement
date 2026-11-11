@@ -79,6 +79,24 @@ def crop_norm(img: Image.Image, box: list[float]) -> Image.Image:
     return img.crop(px)
 
 
+def crop_centered(img: Image.Image, box: list[float], margin: float = 1.25) -> Image.Image:
+    """Square crop centred on a detection, so box *tightness* stops mattering.
+
+    A vision model draws the same watch differently in two photos - one tight,
+    one loose - and comparing the raw crops then measures how much shelf
+    background each box happened to include. That is what made a moved watch
+    score 0.697 against a 0.72 threshold and get reported as stolen-plus-new.
+    Squaring the crop around the centre and normalising its side length removes
+    most of that difference, so the score reflects the object, not the box.
+    """
+    x, y, w, h = (float(v) for v in box[:4])
+    if w <= 0 or h <= 0:
+        return crop_norm(img, box)
+    cx, cy = x + w / 2.0, y + h / 2.0
+    side = max(w, h) * margin
+    return crop_norm(img, [cx - side / 2.0, cy - side / 2.0, side, side])
+
+
 def dhash(img: Image.Image, size: int = 12) -> int:
     g = img.convert("L").resize((size + 1, size), Image.LANCZOS)
     a = np.asarray(g, dtype=np.int16)

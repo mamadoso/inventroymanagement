@@ -58,9 +58,9 @@ def compare(
         cost = np.zeros((n, m), dtype=np.float64)
         appear_cache: dict[tuple[int, int], float] = {}
         for i, bi in enumerate(base):
-            bcrop = imaging.crop_norm(base_img, bi["box"])
+            bcrop = imaging.crop_centered(base_img, bi["box"])
             for j, ci in enumerate(cap):
-                ap = imaging.appearance_similarity(bcrop, imaging.crop_norm(cap_img, ci["box"]))
+                ap = imaging.appearance_similarity(bcrop, imaging.crop_centered(cap_img, ci["box"]))
                 appear_cache[(i, j)] = ap
                 cost[i, j] = -(0.55 * _spatial(bi["box"], ci["box"]) + 0.45 * ap)
         r, c = linear_sum_assignment(cost)
@@ -91,30 +91,40 @@ def compare(
     unmatched_b = [i for i in range(n) if i not in used_b]
     unmatched_c = [j for j in range(m) if j not in used_c]
 
-    # Pass 2: moved = same object, different place.
+    # Pass 2: moved = same object, different place. Score every leftover pair
+    # first and take them best-appearance-first, so an early base item cannot
+    # steal the capture box that a later base item matches better.
     moves: list[dict] = []
-    for i in list(unmatched_b):
-        best, best_ap = None, 0.0
-        bcrop = imaging.crop_norm(base_img, base[i]["box"])
-        for j in list(unmatched_c):
-            ap = imaging.appearance_similarity(bcrop, imaging.crop_norm(cap_img, cap[j]["box"]))
-            if ap > best_ap:
-                best, best_ap = j, ap
-        if best is not None and best_ap >= config.MOVED_MIN_APPEAR:
+    if unmatched_b and unmatched_c:
+        bcrops = {i: imaging.crop_centered(base_img, base[i]["box"]) for i in unmatched_b}
+        ccrops = {j: imaging.crop_centered(cap_img, cap[j]["box"]) for j in unmatched_c}
+        scored = sorted(
+            (
+                imaging.appearance_similarity(bi, ccrops[j]), i, j
+                for i, bi in bcrops.items()
+                for j in ccrops
+            ),
+            key=lambda t: -t[0],
+        )
+        for best_ap, i, j in scored:
+            if i not in unmatched_b or j not in unmatched_c:
+                continue
+            if best_ap < config.MOVED_MIN_APPEAR:
+                break
             base[i]["kind"] = "moved_out"
-            cap[best]["kind"] = "moved_in"
-            base[i]["match"] = cap[best]["match"] = {"appear": round(best_ap, 3)}
+            cap[j]["kind"] = "moved_in"
+            base[i]["match"] = cap[j]["match"] = {"appear": round(best_ap, 3)}
             moves.append(
                 {
                     "from": base[i]["n"],
-                    "to": cap[best]["n"],
+                    "to": cap[j]["n"],
                     "appear": round(best_ap, 3),
                     "desc": base[i].get("desc", ""),
                     "box": base[i]["box"],
                 }
             )
             unmatched_b.remove(i)
-            unmatched_c.remove(best)
+            unmatched_c.remove(j)
 
     for i in unmatched_b:
         base[i]["kind"] = "missing"
