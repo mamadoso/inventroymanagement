@@ -23,6 +23,7 @@
     <tr><td>timeout</td><td class="mono">{{ cfg.timeout }} s</td></tr>
     <tr><td>data dir</td><td class="mono">{{ cfg.data_dir }}</td></tr>
     <tr><td>match thresholds</td><td class="mono">match ≥ {{ cfg.match_min }} · moved ≥ {{ cfg.moved_min }}</td></tr>
+    <tr><td>code version</td><td class="mono">{{ check.version }} · process started {{ check.started_at_utc }} UTC</td></tr>
   </table>
   <form method="post" action="/health/test" class="row">
     <button class="btn" type="submit">Re-test connection</button>

@@ -456,7 +456,13 @@ def health_check(force: bool = False) -> dict:
 
             _HEALTH["result"] = openai_compat.check_connection()
         _HEALTH["ran"] = True
-    return _HEALTH["result"]
+    result = dict(_HEALTH["result"] or {})
+    # If this ever disagrees with `git log -1` on the server, the process is
+    # running old code and needs a restart - the most common cause of a fix
+    # that "did not work".
+    result["version"] = config.VERSION
+    result["started_at_utc"] = config.STARTED_AT
+    return result
 
 
 @app.get("/health", response_class=HTMLResponse)

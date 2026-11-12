@@ -10,6 +10,7 @@ See docs/DEPLOY-UBUNTU.md and docs/AI-PROVIDERS.md.
 """
 import os
 import re
+import time
 from pathlib import Path
 
 
@@ -96,6 +97,32 @@ DEFAULT_VIEWS = [
     ("left", "Left angle"),
     ("right", "Right angle"),
 ]
+
+
+def _git_version() -> str:
+    """Short commit of the checkout this process was started from.
+
+    Two debugging rounds were wasted on 'the fix did not work' when the fix was
+    correct but the running process predated it. Printing the version and start
+    time on /health makes that impossible to confuse.
+    """
+    try:
+        import subprocess
+
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=Path(__file__).resolve().parent.parent,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        return out.stdout.strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
+VERSION = _git_version()
+STARTED_AT = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
 
 
 def ensure_dirs() -> None:
