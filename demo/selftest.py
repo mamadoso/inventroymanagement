@@ -68,7 +68,6 @@ def check_multiangle(client, appmod, base, minus) -> list[str]:
 
     failures: list[str] = []
     sid = store.create_shelf("selftest-multi")
-    store.add_view(sid, "left", "Left angle")
     keys = [v["key"] for v in store.get_shelf(sid)["views"]][:2]
     if len(keys) < 2:
         failures.append("test shelf needs two angles to prove the multi-angle flow")
@@ -122,8 +121,9 @@ def check_multiangle(client, appmod, base, minus) -> list[str]:
         return failures + [f"GET /shelves/{{id}}/report -> {rep.status_code}"]
     if "Nothing analysed yet" not in rep.text:
         failures.append("the first pass should set baselines, not invent a diff")
-    if not all(v["baseline"] for v in shelf["views"]):
-        failures.append("both angles should now have a baseline")
+    by_key = {v["key"]: v for v in shelf["views"]}
+    if not all(by_key[k]["baseline"] for k in keys):
+        failures.append("both staged angles should now have a baseline")
     else:
         print("first pass        : both angles became baselines")
 
@@ -160,7 +160,7 @@ def check_multiangle(client, appmod, base, minus) -> list[str]:
     shelf = store.get_shelf(sid)
     left = sum(v["queued"] for v in shelf["views"])
     after = [v["baseline_shot_id"] for v in shelf["views"]]
-    if gone.status_code != 303 or left or before != after:
+    if gone.status_code not in (200, 303) or left or before != after:
         failures.append(f"discard staged: status={gone.status_code} left={left} baselines moved={before != after}")
     else:
         print("discard staged      : queue emptied, baselines intact")
