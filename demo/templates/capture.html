@@ -38,16 +38,33 @@
     <canvas id="canvas" hidden></canvas>
   </div>
 
+  <div id="status" class="status" hidden></div>
+
+  <div id="staged" class="card staged" hidden>
+    <p class="staged-head"><b id="stagedcount">0</b> photo(s) saved, nothing counted yet.</p>
+    <div id="askangles">
+      <p class="askq">Does this shelf have another angle you can photograph?</p>
+      <div class="row wrap" id="anglebtns"></div>
+    </div>
+    <div class="split">
+      <button class="btn big" id="analyse" type="button">Count and compare all</button>
+      <button class="btn ghost small" id="discard" type="button">Discard these</button>
+    </div>
+  </div>
+
   <div class="row" style="justify-content:center;margin-top:4px">
     <button class="btn ghost small" id="clearview" type="button">Clear photos for this angle</button>
   </div>
 
-  <div id="status" class="status" hidden></div>
-  <div id="result" class="result" hidden></div>
-
-  <p class="muted small">Mode: {{ provider }}. The first photo of an angle becomes its baseline;
-     every later photo is compared against it.</p>
+  <p class="muted small">Mode: {{ provider }}. Photos are saved first and counted together, so
+     every angle is analysed against its own baseline in one pass. The first photo of an angle
+     becomes that angle's baseline.</p>
 </div>
-<script>window.SHELF_ID = {{ shelf.id }};</script>
+<script>
+  window.SHELF_ID = {{ shelf.id }};
+  window.VIEWS = {{ views | tojson }};
+  window.VIEW_LABELS = {{ view_labels | tojson }};
+  window.STAGED = {{ staged | tojson }};
+</script>
 <script src="/static/capture.js"></script>
 {% endblock %}

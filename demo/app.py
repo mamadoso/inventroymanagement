@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 import shutil
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -55,14 +56,18 @@ def file_url(rel: str) -> str:
     return f"/files/{rel}" if rel else ""
 
 
-def process_upload(
+def stage_upload(
     shelf_id: int,
     view_key: str,
     data: bytes,
     source: str = "upload",
     taken_by: str = "",
 ) -> dict:
-    """Store a photo, run detection, and diff it against that view's baseline."""
+    """Save a photo and mark it queued. No AI call, so this returns instantly.
+
+    Photos wait here until every angle is in, so one press then analyses the
+    whole set together instead of firing three unrelated partial reports.
+    """
     shelf = store.get_shelf(shelf_id)
     if not shelf:
         raise HTTPException(404, "shelf not found")
@@ -76,7 +81,33 @@ def process_upload(
     rel = f"{rel_dir}/{stem}.jpg"
     dest = config.IMAGE_DIR / rel
     w, h = imaging.save_upload(data, dest)
-    shot_id = store.save_shot(view["id"], kind, rel, w, h, source, taken_by)
+    shot_id = store.save_shot(view["id"], kind, rel, w, h, source, taken_by,
+                              status="queued")
+    return {
+        "ok": True, "queued": True, "shot_id": shot_id, "kind": kind,
+        "view": view["key"], "view_label": view["label"],
+        "staged": len(store.queued_shots(shelf_id)),
+    }
+
+
+def analyse_shot(shot_id: int) -> dict:
+    """Detect and diff one staged photo against its own view's baseline.
+
+    A shot staged on a view that has no baseline becomes that baseline, so the
+    same action establishes the reference set or compares against it depending
+    on where the shelf is.
+    """
+    shot = store.get_shot(shot_id)
+    if not shot:
+        return {"ok": False, "shot_id": shot_id, "error": "shot not found"}
+    view = store.one("SELECT * FROM views WHERE id=?", (shot["view_id"],))
+    if not view:
+        store.set_status(shot_id, "failed", "its angle was deleted")
+        return {"ok": False, "shot_id": shot_id, "error": "view no longer exists"}
+    shelf_id = view["shelf_id"]
+    dest = config.IMAGE_DIR / shot["filename"]
+    store.set_status(shot_id, "pending")
+    out = {"shot_id": shot_id, "view": view["key"], "view_label": view["label"]}
 
     try:
         det = vision.detect(imaging.open_image(dest))
@@ -86,25 +117,27 @@ def process_upload(
             model=config.AI_MODEL, latency_ms=0, total=0, quality="error",
             notes="", items=[], error=str(exc)[:700],
         )
-        return {"ok": False, "shot_id": shot_id, "error": str(exc)[:700]}
+        return {**out, "ok": False, "error": str(exc)[:700]}
 
     store.finish_shot(
         shot_id, status="done", provider=det.provider, model=det.model,
         latency_ms=det.latency_ms, total=det.total, quality=det.quality,
         notes=det.notes, items=det.items,
     )
+    out.update(total=det.total, quality=det.quality, latency_ms=det.latency_ms)
 
-    if kind == "baseline":
+    # Decide the role now, not at upload time: two photos of the same angle can be
+    # staged before anything is counted, and only the first of them can be the
+    # baseline. Storing 'baseline' for both would leave the angle with no diff.
+    if not view.get("baseline_shot_id"):
+        store.set_kind(shot_id, "baseline")
         store.set_baseline(shot_id)
-        return {
-            "ok": True, "kind": "baseline", "shot_id": shot_id,
-            "total": det.total, "quality": det.quality, "latency_ms": det.latency_ms,
-            "redirect": f"/shelves/{shelf_id}?msg=Baseline+set+for+{view_key}+({det.total}+watches)",
-        }
+        return {**out, "ok": True, "kind": "baseline"}
+    store.set_kind(shot_id, "capture")
 
     base_shot = store.get_shot(view["baseline_shot_id"])
     if not base_shot or base_shot["status"] != "done":
-        return {"ok": False, "shot_id": shot_id,
+        return {**out, "ok": False, "kind": "capture",
                 "error": "The baseline for this view has no usable detection."}
 
     base_img = imaging.open_image(config.IMAGE_DIR / base_shot["filename"])
@@ -114,6 +147,8 @@ def process_upload(
     summary["frame_align"] = round(align, 3)
     summary["camera_shift"] = align < config.FRAME_ALIGN_MIN
 
+    stem = Path(shot["filename"]).stem
+    rel_dir = str(Path(shot["filename"]).parent)
     annot_cap_rel = f"{rel_dir}/{stem}-cap.jpg"
     annot_base_rel = ""
     imaging.annotate(cap_img, summary["cap_items"], config.IMAGE_DIR / annot_cap_rel)
@@ -128,11 +163,23 @@ def process_upload(
         summary["base_total"], summary["cap_total"], summary,
         annot_base_rel, annot_cap_rel,
     )
-    return {
-        "ok": True, "kind": "capture", "shot_id": shot_id, "diff_id": diff_id,
-        "summary": summary, "total": det.total, "quality": det.quality,
-        "latency_ms": det.latency_ms, "redirect": f"/diffs/{diff_id}",
-    }
+    return {**out, "ok": True, "kind": "capture", "diff_id": diff_id,
+            "summary": summary, "redirect": f"/diffs/{diff_id}"}
+
+
+def process_upload(
+    shelf_id: int,
+    view_key: str,
+    data: bytes,
+    source: str = "upload",
+    taken_by: str = "",
+    analyse: bool = True,
+) -> dict:
+    """Store a photo, then either analyse it now or leave it staged."""
+    staged = stage_upload(shelf_id, view_key, data, source, taken_by)
+    if not analyse:
+        return staged
+    return analyse_shot(staged["shot_id"])
 
 
 def shelf_summary(shelf: dict) -> dict:
@@ -163,6 +210,60 @@ def shelf_summary(shelf: dict) -> dict:
     else:
         worst = max(states, key=lambda s: order.get(s, 0))
     return {"worst": worst, "views": views}
+
+
+def shelf_report(shelf: dict) -> dict:
+    """One row per angle plus a shelf-level headline.
+
+    Angles overlap, so a watch missing in two views is one theft, not two. The
+    headline gives a range - at least the worst single angle, at most the sum -
+    rather than a number we cannot justify.
+    """
+    entries = []
+    for v in shelf["views"]:
+        e = {
+            "key": v["key"], "label": v["label"],
+            "has_baseline": bool(v.get("baseline")),
+            "baseline_total": (v.get("baseline") or {}).get("total", 0),
+            "queued": v.get("queued", 0),
+            "diff": v.get("last_diff"), "counts": None, "summary": None,
+            "state": "idle", "text": "no capture yet",
+        }
+        d = e["diff"]
+        if d:
+            s = d["summary"]
+            e["state"], e["text"] = diffmod.verdict(s)
+            e["counts"], e["summary"] = s["counts"], s
+        entries.append(e)
+
+    scored = [e for e in entries if e["counts"]]
+
+    def span(key: str) -> tuple[int, int]:
+        vals = [e["counts"][key] for e in scored]
+        return (max(vals) if vals else 0, sum(vals) if vals else 0)
+
+    shifted = [e for e in scored if (e["summary"] or {}).get("camera_shift")]
+    dirty = [e for e in scored
+             if e["counts"]["missing"] or e["counts"]["new"] or e["counts"]["swapped"]]
+    if not scored:
+        headline, state = "Nothing analysed yet", "idle"
+    elif shifted:
+        headline = (f"{len(shifted)} of {len(scored)} angle(s) were shot from a different "
+                    f"position - those counts cannot be trusted")
+        state = "bad"
+    elif not dirty:
+        headline, state = f"No change across {len(scored)} angle(s)", "ok"
+    else:
+        parts = []
+        for lo, hi, word in (span("missing") + ("missing",), span("new") + ("new",),
+                             span("swapped") + ("swapped",), span("moved") + ("moved",)):
+            if hi:
+                parts.append(f"{lo} {word}" if lo == hi else f"{lo}-{hi} {word}")
+        headline = (f"Changes on {len(dirty)} of {len(scored)} angle(s) - "
+                    + ", ".join(parts)) if parts else "No change"
+        state = "bad" if span("missing")[1] else "warn"
+    return {"rows": entries, "headline": headline, "state": state,
+            "angles": len(scored), "queued": sum(e["queued"] for e in entries)}
 
 
 # -------------------------------------------------------------------- pages
@@ -218,6 +319,32 @@ def shelf_page(request: Request, sid: int):
             "provider": vision.provider_label(),
             "mock_mode": config.active_provider() == "mock",
             "capture_url": f"{config.public_url(request)}/capture?shelf={sid}",
+        },
+    )
+
+
+@app.get("/shelves/{sid}/report", response_class=HTMLResponse)
+def shelf_report_page(request: Request, sid: int):
+    """Combined result for every angle of one shelf, after an 'analyse all'."""
+    shelf = store.get_shelf(sid)
+    if not shelf:
+        raise HTTPException(404, "shelf not found")
+    report = shelf_report(shelf)
+    for e in report["rows"]:
+        d = e["diff"]
+        if d:
+            d["annot_base_url"] = file_url(d["annot_base"])
+            d["annot_cap_url"] = file_url(d["annot_cap"])
+    return templates.TemplateResponse(
+        request,
+        "report.html",
+        {
+            "request": request,
+            "shelf": shelf,
+            "report": report,
+            "provider": vision.provider_label(),
+            "now": store.now()[:16].replace("T", " "),
+            "mock_mode": config.active_provider() == "mock",
         },
     )
 
@@ -364,6 +491,9 @@ def capture_page(request: Request, shelf: int = 0, view: str = ""):
             "mock_mode": config.active_provider() == "mock",
             "views": valid,
             "view_labels": {v["key"]: v["label"] for v in s["views"]},
+            # Restored after a reload or a dropped connection: the database, not
+            # the browser, remembers which angles are already staged.
+            "staged": {v["key"]: v["queued"] for v in s["views"] if v.get("queued")},
         },
     )
 
@@ -378,13 +508,101 @@ async def api_capture(
     view: str = Form("front"),
     taken_by: str = Form(""),
     source: str = Form("camera"),
+    analyse: str = Form("1"),
 ):
     data = await file.read()
     if not data:
         raise HTTPException(400, "empty file")
     if len(data) > MAX_BYTES:
         raise HTTPException(413, f"file larger than {config.MAX_UPLOAD_MB}MB")
-    return JSONResponse(process_upload(shelf, view, data, source, taken_by))
+    return JSONResponse(
+        process_upload(shelf, view, data, source, taken_by,
+                       analyse=analyse not in ("0", "false", "no"))
+    )
+
+
+# --------------------------------------------------- multi-angle analyse jobs
+# One vision call is 10-45s, so three angles would blow past the proxy timeout
+# if the browser waited for all of them. The work runs on a thread and the page
+# polls; the shot statuses in the database stay the source of truth, so a
+# restart mid-job shows up as failed angles instead of a permanently spinning page.
+
+_JOBS: dict[int, dict] = {}
+_JOBS_LOCK = threading.Lock()
+
+
+def _analyse_many(sid: int, shot_ids: list[int]) -> None:
+    for shot_id in shot_ids:
+        try:
+            res = analyse_shot(shot_id)
+            with _JOBS_LOCK:
+                job = _JOBS.get(sid)
+                if job:
+                    job["done"] += 1
+                    if not res.get("ok"):
+                        job["failed"] += 1
+                        job["errors"].append(f"{res.get('view_label', shot_id)}: "
+                                             f"{str(res.get('error'))[:120]}")
+        except Exception as exc:  # noqa: BLE001 - one bad angle must not kill the rest
+            store.set_status(shot_id, "failed", str(exc)[:200])
+            with _JOBS_LOCK:
+                job = _JOBS.get(sid)
+                if job:
+                    job["done"] += 1
+                    job["failed"] += 1
+                    job["errors"].append(str(exc)[:120])
+    with _JOBS_LOCK:
+        if sid in _JOBS:
+            _JOBS[sid]["running"] = False
+
+
+@app.post("/shelves/{sid}/analyse")
+def analyse_all(sid: int):
+    """Send every staged photo to the AI and report back per angle."""
+    if not store.get_shelf(sid):
+        raise HTTPException(404, "shelf not found")
+    with _JOBS_LOCK:
+        if _JOBS.get(sid, {}).get("running"):
+            return {"started": 0, "already_running": True,
+                    "redirect": f"/shelves/{sid}/report"}
+        shots = store.queued_shots(sid)
+        if not shots:
+            return {"started": 0, "complete": True, "redirect": f"/shelves/{sid}"}
+        for s in shots:
+            store.set_status(s["id"], "pending")
+        _JOBS[sid] = {"total": len(shots), "done": 0, "failed": 0,
+                      "running": True, "errors": []}
+        threading.Thread(target=_analyse_many, args=(sid, [s["id"] for s in shots]),
+                         daemon=True).start()
+    return {"started": len(shots), "complete": False,
+            "redirect": f"/shelves/{sid}/report"}
+
+
+@app.get("/api/analyse/{sid}/progress")
+def analyse_progress(sid: int):
+    with _JOBS_LOCK:
+        job = dict(_JOBS.get(sid) or {})
+    if not job:
+        left = store.rows(
+            """SELECT COUNT(*) AS n FROM shots WHERE status IN ('queued','pending')
+               AND view_id IN (SELECT id FROM views WHERE shelf_id=?)""",
+            (sid,),
+        )[0]["n"]
+        return {"total": 0, "done": 0, "failed": 0, "running": bool(left),
+                "complete": not left}
+    job["complete"] = (not job.get("running")) and job.get("done", 0) >= job.get("total", 0)
+    return job
+
+
+@app.post("/shelves/{sid}/staged/discard")
+def discard_staged(sid: int):
+    """Throw the staged photos away (a retake) without touching baselines."""
+    if not store.get_shelf(sid):
+        raise HTTPException(404, "shelf not found")
+    n = store.discard_queued(sid)
+    return RedirectResponse(
+        f"/capture?shelf={sid}&msg=Discarded+{n}+staged+photo(s)", status_code=303
+    )
 
 
 @app.get("/api/shelves")

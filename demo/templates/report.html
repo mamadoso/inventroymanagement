@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Report — {{ shelf.name }}{% endblock %}
+{% block body %}
+<div class="crumbs">
+  <a href="/">Shelves</a> / <a href="/shelves/{{ shelf.id }}">{{ shelf.name }}</a> / <b>report</b>
+</div>
+
+<div class="headline {{ report.state }}">
+  <div class="big-count">
+    <span class="unit">{{ report.angles }} angle{{ 's' if report.angles != 1 else '' }}</span>
+  </div>
+  <div class="headline-text">{{ report.headline }}</div>
+  <div class="muted small">{{ now }} · {{ provider }}</div>
+</div>
+
+{% if report.queued %}
+<div class="banner warn">
+  {{ report.queued }} photo(s) are still staged and were not analysed.
+</div>
+{% endif %}
+
+<section class="card">
+  <h2>Per angle</h2>
+  <table class="grid counts">
+    <tr>
+      <th>angle</th><th>baseline</th><th>now</th>
+      <th>missing</th><th>new</th><th>swapped</th><th>moved</th>
+      <th>framing</th><th></th>
+    </tr>
+    {% for e in report.rows %}
+    <tr>
+      <td><b>{{ e.label }}</b>
+        {% if not e.has_baseline %}<span class="pill warn">no baseline</span>{% endif %}
+        {% if e.queued %}<span class="pill new">{{ e.queued }} staged</span>{% endif %}
+      </td>
+      {% if e.counts %}
+        <td>{{ e.baseline_total }}</td>
+        <td>{{ e.summary.cap_total }}</td>
+        <td class="{{ 'bad' if e.counts.missing }}">{{ e.counts.missing }}</td>
+        <td>{{ e.counts.new }}</td>
+        <td>{{ e.counts.swapped }}</td>
+        <td>{{ e.counts.moved }}</td>
+        <td>
+          {% if e.summary.camera_shift %}
+            <span class="pill bad">moved {{ (e.summary.frame_align * 100) | round(0) | int }}%</span>
+          {% else %}
+            <span class="pill ok">{{ (e.summary.frame_align * 100) | round(0) | int }}%</span>
+          {% endif %}
+        </td>
+        <td><a href="/diffs/{{ e.diff.id }}">detail</a></td>
+      {% else %}
+        <td colspan="7" class="muted">{{ e.text }}</td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="muted small">
+    Angles overlap, so a watch missing in two views is one theft, not two. The
+    headline shows a range for that reason; open an angle for its exact list.
+  </p>
+</section>
+
+{% for e in report.rows %}
+  {% if e.diff and e.counts and (e.counts.missing or e.counts.new or e.counts.swapped or e.counts.moved) %}
+  <section class="card">
+    <h2>{{ e.label }} — {{ e.text }}</h2>
+    {% if e.summary.camera_shift %}
+      <div class="banner bad">
+        The camera moved for this angle (framing match
+        {{ (e.summary.frame_align * 100) | round(0) | int }}%). Everything below
+        may be parallax rather than a real change.
+      </div>
+    {% endif %}
+    <table class="grid">
+      {% for ch in e.summary.changes %}
+      <tr>
+        <td><span class="pill {{ 'bad' if ch.kind=='missing' else ('new' if ch.kind=='new' else 'warn') }}">{{ ch.kind }}</span></td>
+        <td>position <b>#{{ ch.n }}</b>{% if ch.to %} → <b>#{{ ch.to }}</b>{% endif %}</td>
+        <td class="muted">{{ ch.desc }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% if e.diff.annot_cap_url %}
+      <figure><figcaption>{{ e.label }} — annotated</figcaption>
+        <img src="{{ e.diff.annot_cap_url }}" alt="annotated {{ e.label }}"></figure>
+    {% endif %}
+  </section>
+  {% endif %}
+{% endfor %}
+
+<div class="split">
+  <a class="btn big" href="/capture?shelf={{ shelf.id }}">Take more photos</a>
+  <a class="btn ghost" href="/shelves/{{ shelf.id }}">Back to shelf</a>
+</div>
+{% endblock %}

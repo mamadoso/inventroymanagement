@@ -12,7 +12,6 @@
   const $ = (id) => document.getElementById(id);
   const viewSel = $("view");
   const statusEl = $("status");
-  const resultEl = $("result");
 
   const saved = localStorage.getItem("ahadi.view");
   if (saved && [...viewSel.options].some((o) => o.value === saved)) viewSel.value = saved;
@@ -21,7 +20,6 @@
   let tick = null;
   function showStatus(text, busy) {
     statusEl.hidden = false;
-    resultEl.hidden = true;
     statusEl.className = "status" + (busy ? " busy" : "");
     if (tick) { clearInterval(tick); tick = null; }
     if (!busy) { statusEl.textContent = text; return; }
@@ -37,11 +35,39 @@
     }, 1000);
   }
 
-  function esc(s) {
-    return String(s == null ? "" : s).replace(/[&<>"]/g, (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])
-    );
+  // ---- staging: every angle is saved first, then counted in one pass --------
+  const VIEWS = window.VIEWS || [];
+  const LABELS = window.VIEW_LABELS || {};
+  // Restored from the server so a reload or a dropped phone connection does not
+  // silently lose photos that are already staged.
+  const STAGED0 = window.STAGED || {};
+  const stagedViews = new Set(Object.keys(STAGED0));
+  let stagedCount = Object.values(STAGED0).reduce((a, b) => a + b, 0);
+  let analysing = false;
+
+  function paintStaged() {
+    const box = $("staged");
+    if (!box) return;
+    box.hidden = stagedCount === 0;
+    if (!stagedCount) return;
+    $("stagedcount").textContent = stagedCount;
+    const bar = $("anglebtns");
+    bar.innerHTML = "";
+    for (const v of VIEWS.filter((v) => !stagedViews.has(v))) {
+      const b = document.createElement("button");
+      b.className = "btn ghost small";
+      b.type = "button";
+      b.textContent = "+ " + (LABELS[v] || v);
+      b.addEventListener("click", () => {
+        viewSel.value = v;
+        localStorage.setItem("ahadi.view", v);
+        $("file").click();
+      });
+      bar.appendChild(b);
+    }
+    $("askangles").hidden = bar.children.length === 0;
   }
+  paintStaged();
 
   async function send(blob, filename) {
     const fd = new FormData();
@@ -49,7 +75,8 @@
     fd.append("shelf", window.SHELF_ID);
     fd.append("view", viewSel.value);
     fd.append("source", "camera");
-    showStatus("Analysing photo…", true);
+    fd.append("analyse", "0");
+    showStatus("Saving photo…", true);
     let res, data;
     try {
       res = await fetch("/api/capture", { method: "POST", body: fd });
@@ -59,54 +86,71 @@
       return;
     }
     if (!data.ok) {
-      showStatus("Could not analyse: " + (data.error || res.status), false);
+      showStatus("Could not save: " + (data.error || res.status), false);
       return;
     }
-    statusEl.hidden = true;
-    render(data);
+    stagedViews.add(data.view);
+    stagedCount = data.staged ?? stagedCount + 1;
+    paintStaged();
+    const left = VIEWS.filter((v) => !stagedViews.has(v));
+    showStatus(
+      left.length
+        ? `Saved ${data.view_label}. ${left.length} angle(s) still to go.`
+        : `Saved ${data.view_label}. That is every angle — now count them.`,
+      false
+    );
   }
 
-  function render(data) {
-    const s = data.summary || {};
-    const c = s.counts || {};
-    let cls = "ok", head = data.kind === "baseline"
-      ? `Baseline set — ${data.total} watches`
-      : (c.missing ? `${c.missing} MISSING` : (c.new || c.swapped ? "Changed" : (c.moved ? "Moved only" : "No change")));
-
-    if (data.kind !== "baseline") {
-      cls = c.missing ? "bad" : (c.new || c.swapped || c.moved ? "warn" : "ok");
+  async function analyseAll() {
+    if (analysing || !stagedCount) return;
+    analysing = true;
+    const btn = $("analyse");
+    btn.disabled = true;
+    const total = stagedCount;
+    const t0 = Date.now();
+    showStatus(`Counting ${total} photo(s)… 0/${total} · 0s`, false);
+    let res;
+    try {
+      res = await fetch(`/shelves/${window.SHELF_ID}/analyse`, { method: "POST" });
+    } catch (e) {
+      showStatus("Could not start the analysis — is the server running?", false);
+      btn.disabled = false;
+      analysing = false;
+      return;
     }
-
-    let html = `<div class="headline ${cls}">
-      <div class="big-count">${data.kind === "baseline" ? "" :
-        `<span class="from">${s.base_total}</span><span class="arrow">→</span><span class="to">${s.cap_total}</span><span class="unit">watches</span>`}</div>
-      <div class="headline-text">${esc(head)}</div>
-      <div class="muted small">${esc(viewSel.options[viewSel.selectedIndex].text)} · ${data.latency_ms || 0} ms</div>
-    </div><div class="card">`;
-
-    if (data.kind === "baseline") {
-      html += `<p>Now take a second photo after removing a watch to see the diff.</p>`;
-    } else if (!s.changes || !s.changes.length) {
-      html += `<p class="pill ok">Nothing changed on this angle.</p>`;
-    } else {
-      html += `<ul>`;
-      for (const ch of s.changes) {
-        html += `<li><span class="pill ${ch.kind === "missing" ? "bad" : ch.kind === "new" ? "new" : "warn"}">${esc(ch.kind)}</span>
-                  position <b>#${ch.n}</b>${ch.to ? ` → <b>#${ch.to}</b>` : ""}
-                  <span class="muted small">${esc(ch.desc)}</span></li>`;
+    const start = await res.json().catch(() => ({}));
+    if (start.complete || !start.started) {
+      location.href = start.redirect || `/shelves/${window.SHELF_ID}`;
+      return;
+    }
+    const timer = setInterval(async () => {
+      let p;
+      try {
+        p = await (await fetch(`/api/analyse/${window.SHELF_ID}/progress`)).json();
+      } catch (e) {
+        return;  // transient; the next tick will try again
       }
-      html += `</ul>`;
-    }
-    if (data.quality && data.quality !== "good") {
-      html += `<p class="pill warn">photo quality: ${esc(data.quality)} — consider a retake</p>`;
-    }
-    if (data.diff_id) {
-      html += `<p><a class="btn small" href="/diffs/${data.diff_id}">Open full report with annotated photos</a></p>`;
-    }
-    html += `</div>`;
-    resultEl.innerHTML = html;
-    resultEl.hidden = false;
-    resultEl.scrollIntoView({ behavior: "smooth", block: "start" });
+      const secs = Math.round((Date.now() - t0) / 1000);
+      const done = p.done ?? 0, all = p.total || total;
+      showStatus(
+        `Counting ${all} photo(s)… ${done}/${all} · ${secs}s` +
+        (p.failed ? ` · ${p.failed} failed` : ""),
+        false
+      );
+      if (p.complete) {
+        clearInterval(timer);
+        location.href = `/shelves/${window.SHELF_ID}/report`;
+      }
+    }, 1500);
+  }
+
+  if ($("analyse")) {
+    $("analyse").addEventListener("click", analyseAll);
+    $("discard").addEventListener("click", () => {
+      if (!confirm("Discard the staged photos? Nothing has been counted yet.")) return;
+      fetch(`/shelves/${window.SHELF_ID}/staged/discard`, { method: "POST" })
+        .then(() => location.reload());
+    });
   }
 
   // ---- clear this angle so a new baseline can be set -----------------------

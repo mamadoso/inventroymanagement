@@ -8,6 +8,9 @@
 <div class="split">
   <a class="btn big" href="/capture?shelf={{ shelf.id }}">📷 Open capture screen on phone</a>
   <a class="btn ghost" href="/qr/{{ shelf.id }}">QR code</a>
+  {% if shelf.diff_count %}
+  <a class="btn ghost" href="/shelves/{{ shelf.id }}/report">Combined report</a>
+  {% endif %}
   {% if shelf.diff_count or shelf.total_shots %}
   <form method="post" action="/shelves/{{ shelf.id }}/clear"
         onsubmit="return confirm('Delete every photo and comparison on this shelf? The next photo on each angle becomes a new baseline.')">
@@ -17,10 +20,20 @@
 </div>
 <p class="muted small">Capture link: <code>{{ capture_url }}</code> — open this on any Android or iPhone browser.</p>
 
+{% set queued = shelf.views | sum(attribute='queued') %}
+{% if queued %}
+<div class="banner warn">
+  <b>{{ queued }}</b> photo(s) are staged and have not been counted yet.
+  <a href="/capture?shelf={{ shelf.id }}">Go to the capture screen</a> and press
+  &ldquo;Count and compare all&rdquo;.
+</div>
+{% endif %}
+
 {% for v in shelf.views %}
 <section class="card view {{ v.last_diff.summary and 'changed' or '' }}">
   <div class="view-head">
     <h2>{{ v.label }} <span class="muted small">({{ v.key }})</span></h2>
+    {% if v.queued %}<span class="pill new">{{ v.queued }} staged</span>{% endif %}
     {% if v.last_diff %}
       {% set c = v.last_diff.summary.counts %}
       {% if c.missing %}<span class="pill bad">{{ c.missing }} missing</span>

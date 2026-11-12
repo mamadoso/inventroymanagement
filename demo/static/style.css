@@ -157,3 +157,16 @@ pre.recipe {
 }
 .upload { margin-top: 8px; }
 .verdict { color: var(--muted); font-size: 14px; }
+
+/* ---- staged multi-angle capture panel ---- */
+.staged { border-color: #3a4a5e; background: var(--panel2); }
+.staged[hidden] { display: none; }
+.staged-head { margin: 0 0 10px; font-size: 15px; }
+.staged-head b { color: var(--accent); font-size: 20px; }
+.askq { font-size: 14px; margin: 0 0 8px; }
+#anglebtns .btn { margin: 0; }
+table.grid td.bad { color: #ff9d9d; font-weight: 700; }
+table.counts td, table.counts th { text-align: center; }
+table.counts td:first-child, table.counts th:first-child { text-align: left; }
+table.counts td:last-child, table.counts th:last-child { text-align: right; }
+table.counts td[colspan] { text-align: left; color: var(--muted); }

@@ -241,6 +241,10 @@ def _decorate_view(v: dict) -> None:
     v["shot_count"] = one(
         "SELECT COUNT(*) AS n FROM shots WHERE view_id=?", (v["id"],)
     )["n"]
+    v["queued"] = one(
+        "SELECT COUNT(*) AS n FROM shots WHERE view_id=? AND status='queued'",
+        (v["id"],),
+    )["n"]
 
 
 def get_shot(shot_id: int) -> dict | None:
@@ -259,13 +263,45 @@ def save_shot(
     height: int,
     source: str,
     taken_by: str,
+    status: str = "pending",
 ) -> int:
     return insert(
         """INSERT INTO shots(view_id, kind, filename, width, height, source,
                              taken_by, created_at, status)
-           VALUES (?,?,?,?,?,?,?,?, 'pending')""",
-        (view_id, kind, filename, width, height, source, taken_by, now()),
+           VALUES (?,?,?,?,?,?,?,?, ?)""",
+        (view_id, kind, filename, width, height, source, taken_by, now(), status),
     )
+
+
+def queued_shots(shelf_id: int) -> list[dict]:
+    """Photos staged for this shelf that have not been sent to the AI yet."""
+    return rows(
+        """SELECT s.*, v.key AS view_key, v.label AS view_label, v.baseline_shot_id
+           FROM shots s JOIN views v ON v.id = s.view_id
+           WHERE v.shelf_id=? AND s.status='queued'
+           ORDER BY v.id, s.id""",
+        (shelf_id,),
+    )
+
+
+def set_status(shot_id: int, status: str, error: str = "") -> None:
+    run("UPDATE shots SET status=?, error=? WHERE id=?", (status, error, shot_id))
+
+
+def discard_queued(shelf_id: int) -> int:
+    """Throw away staged-but-unanalysed photos (a retake)."""
+    gone = rows(
+        """SELECT s.id, s.filename FROM shots s JOIN views v ON v.id = s.view_id
+           WHERE v.shelf_id=? AND s.status='queued'""",
+        (shelf_id,),
+    )
+    for s in gone:
+        run("DELETE FROM shots WHERE id=?", (s["id"],))
+        try:
+            (config.IMAGE_DIR / s["filename"]).unlink(missing_ok=True)
+        except OSError:
+            pass
+    return len(gone)
 
 
 def finish_shot(
@@ -304,6 +340,11 @@ def set_baseline(shot_id: int) -> None:
     if not sh:
         raise ValueError("unknown shot")
     run("UPDATE views SET baseline_shot_id=? WHERE id=?", (shot_id, sh["view_id"]))
+
+
+def set_kind(shot_id: int, kind: str) -> None:
+    """Re-label a shot once its real role is known at analysis time."""
+    run("UPDATE shots SET kind=? WHERE id=?", (kind, shot_id))
 
 
 def save_diff(

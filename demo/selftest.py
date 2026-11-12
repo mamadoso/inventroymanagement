@@ -14,6 +14,7 @@ Usage:
 """
 from __future__ import annotations
 
+import io
 import sys
 from pathlib import Path
 
@@ -54,6 +55,106 @@ def shelf(with_watches: list[int], move_from: int | None = None, move_to: int | 
         draw.line([cx, cy, cx + 16, cy - 12], fill=(220, 214, 200), width=3)
         draw.line([cx, cy, cx - 10, cy + 14], fill=(220, 214, 200), width=3)
     return img
+
+
+def check_multiangle(client, appmod, base, minus) -> list[str]:
+    """Drive the guided multi-angle session end to end: stage -> analyse -> report.
+
+    The capture screen no longer counts each photo as it lands, so the whole
+    session has to work as one flow, and the shelf headline has to agree with
+    the per-angle rows it is summarising.
+    """
+    import time as _time
+
+    failures: list[str] = []
+    sid = store.create_shelf("selftest-multi")
+    store.add_view(sid, "left", "Left angle")
+    keys = [v["key"] for v in store.get_shelf(sid)["views"]][:2]
+    if len(keys) < 2:
+        failures.append("test shelf needs two angles to prove the multi-angle flow")
+        return failures
+
+    def stage(image, key):
+        buf = io.BytesIO()
+        image.save(buf, "JPEG")
+        return client.post(
+            "/api/capture",
+            files={"file": ("x.jpg", buf.getvalue(), "image/jpeg")},
+            data={"shelf": str(sid), "view": key, "analyse": "0"},
+        ).json()
+
+    def analyse():
+        started = client.post(f"/shelves/{sid}/analyse").json()
+        deadline = _time.time() + 120
+        prog = {}
+        while _time.time() < deadline:
+            prog = client.get(f"/api/analyse/{sid}/progress").json()
+            if prog.get("complete"):
+                return started, prog
+            _time.sleep(0.2)
+        return started, prog
+
+    j1, j2 = stage(base, keys[0]), stage(base, keys[1])
+    if not (j1.get("queued") and j2.get("queued")):
+        return [f"staging must not call the AI: {j1} {j2}"]
+    if j2.get("staged") != 2:
+        return [f"expected 2 staged photos, got {j2.get('staged')}"]
+    print(f"staging           : {j2['staged']} photos queued, no AI call yet")
+
+    page = client.get(f"/capture?shelf={sid}")
+    line = next((l for l in page.text.splitlines() if "window.STAGED" in l), "")
+    if page.status_code != 200 or not all(k in line for k in keys):
+        failures.append(f"capture page does not show the staged photos: {line[:120]}")
+
+    started, prog = analyse()
+    if started.get("started") != 2:
+        return failures + [f"analyse should start 2 photos: {started}"]
+    if not prog.get("complete"):
+        return failures + [f"analyse never finished: {prog}"]
+    if prog.get("failed"):
+        return failures + [f"angle(s) failed to analyse: {prog.get('errors')}"]
+
+    rep = client.get(f"/shelves/{sid}/report")
+    if rep.status_code != 200:
+        return failures + [f"GET /shelves/{{id}}/report -> {rep.status_code}"]
+    if "No change" not in rep.text:
+        return failures + ["two identical angles should report no change"]
+    print("combined report   : 200, both angles clean")
+
+    # Second round: the same front, one watch gone on the other angle.
+    stage(base, keys[0])
+    stage(minus, keys[1])
+    started, prog = analyse()
+    if not prog.get("complete") or prog.get("failed"):
+        return failures + [f"second analyse pass failed: {prog}"]
+
+    report = appmod.shelf_report(store.get_shelf(sid))
+    rows = {r["key"]: r for r in report["rows"]}
+    a, b = rows[keys[0]], rows[keys[1]]
+    if not a["counts"] or not b["counts"]:
+        failures.append(f"both angles should have a diff: {[r['text'] for r in report['rows']]}")
+    else:
+        if b["counts"]["missing"] != 1:
+            failures.append(f"the changed angle should show 1 missing, got {b['counts']}")
+        if a["counts"]["missing"] != 0:
+            failures.append(f"the unchanged angle should show 0 missing, got {a['counts']}")
+        if "missing" not in report["headline"]:
+            failures.append(f"headline should mention the theft: {report['headline']}")
+        print(f"shelf headline      : {report['headline']}")
+
+    # Discarding staged photos must not touch baselines or past diffs.
+    stage(minus, keys[0])
+    before = [v["baseline_shot_id"] for v in store.get_shelf(sid)["views"]]
+    gone = client.post(f"/shelves/{sid}/staged/discard")
+    shelf = store.get_shelf(sid)
+    left = sum(v["queued"] for v in shelf["views"])
+    after = [v["baseline_shot_id"] for v in shelf["views"]]
+    if gone.status_code != 303 or left or before != after:
+        failures.append(f"discard staged: status={gone.status_code} left={left} baselines moved={before != after}")
+    else:
+        print("discard staged      : queue emptied, baselines intact")
+
+    return failures
 
 
 def run() -> int:
@@ -200,14 +301,15 @@ def run() -> int:
                 )
                 if r3.json().get("kind") != "baseline":
                     failures.append("after clearing, the next capture must become the baseline")
+
+        failures.extend(check_multiangle(client, appmod, base, minus))
         print("web app           : routes ok")
     except ImportError as exc:
         print(f"web app           : skipped ({exc})")
 
-    store.run("DELETE FROM diffs")
-    store.run("DELETE FROM shots")
-    store.run("DELETE FROM views")
-    store.run("DELETE FROM shelves")
+    for sql in ("DELETE FROM diffs", "DELETE FROM shots", "DELETE FROM views",
+                "DELETE FROM shelves"):
+        store.run(sql)
 
     print()
     if failures:
