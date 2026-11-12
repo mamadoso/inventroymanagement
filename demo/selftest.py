@@ -180,7 +180,7 @@ def check_multiangle(client, appmod, base, minus) -> list[str]:
     if prog.get("failed") != 2 or not prog.get("complete"):
         failures.append(f"both angles should fail cleanly, not hang: {prog}")
     rep = client.get(f"/shelves/{sid}/report")
-    if "analysis failed" not in rep.text:
+    if "this round failed" not in rep.text:
         failures.append("the report must say which angle failed")
     elif "simulated gateway outage" not in rep.text:
         failures.append("the report should carry the reason the AI gave")

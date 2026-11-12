@@ -230,15 +230,23 @@ def shelf_report(shelf: dict) -> dict:
             "state": "idle", "text": "no capture yet",
         }
         d = e["diff"]
-        if d:
+        newest = (v.get("last_shot") or {}).get("status", "")
+        if newest == "failed":
+            # An older diff must not be presented as the current state when this
+            # round's photo never made it through the AI.
+            e["state"] = "bad"
+            e["diff"] = None
+            e["text"] = "this round failed: " + (
+                ((v.get("last_shot") or {}).get("error") or "no reason given").strip()[:140]
+            )
+        elif newest in ("queued", "pending"):
+            e["state"] = "warn"
+            e["diff"] = None
+            e["text"] = "photographed, not counted yet"
+        elif d:
             s = d["summary"]
             e["state"], e["text"] = diffmod.verdict(s)
             e["counts"], e["summary"] = s["counts"], s
-        elif v.get("last_failed"):
-            e["state"] = "bad"
-            e["text"] = "analysis failed: " + (
-                (v["last_failed"].get("error") or "no reason given").strip()[:140]
-            )
         entries.append(e)
 
     scored = [e for e in entries if e["counts"]]

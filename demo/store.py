@@ -245,10 +245,10 @@ def _decorate_view(v: dict) -> None:
         "SELECT COUNT(*) AS n FROM shots WHERE view_id=? AND status='queued'",
         (v["id"],),
     )["n"]
-    # A failed angle must not read as "nothing happened" on the combined report.
-    v["last_failed"] = one(
-        "SELECT * FROM shots WHERE view_id=? AND status='failed' ORDER BY id DESC LIMIT 1",
-        (v["id"],),
+    # The newest photo decides what this round can claim. If it failed, an older
+    # diff must not be shown as though it described the shelf as it is now.
+    v["last_shot"] = one(
+        "SELECT * FROM shots WHERE view_id=? ORDER BY id DESC LIMIT 1", (v["id"],)
     )
 
 
