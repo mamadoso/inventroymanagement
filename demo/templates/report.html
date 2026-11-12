@@ -49,7 +49,7 @@
         </td>
         <td><a href="/diffs/{{ e.diff.id }}">detail</a></td>
       {% else %}
-        <td colspan="7" class="muted">{{ e.text }}</td>
+        <td colspan="7" class="{{ 'bad' if e.state == 'bad' else 'muted' }}">{{ e.text }}</td>
       {% endif %}
     </tr>
     {% endfor %}

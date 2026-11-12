@@ -51,6 +51,8 @@
     box.hidden = stagedCount === 0;
     if (!stagedCount) return;
     $("stagedcount").textContent = stagedCount;
+    $("analyse").textContent =
+      "Count and compare all " + stagedCount + " photo" + (stagedCount > 1 ? "s" : "");
     const bar = $("anglebtns");
     bar.innerHTML = "";
     for (const v of VIEWS.filter((v) => !stagedViews.has(v))) {

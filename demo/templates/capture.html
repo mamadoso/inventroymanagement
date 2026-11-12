@@ -56,9 +56,9 @@
     <button class="btn ghost small" id="clearview" type="button">Clear photos for this angle</button>
   </div>
 
-  <p class="muted small">Mode: {{ provider }}. Photos are saved first and counted together, so
-     every angle is analysed against its own baseline in one pass. The first photo of an angle
-     becomes that angle's baseline.</p>
+  <p class="muted small">Mode: {{ provider }}. Photos are saved first and counted together in one
+     pass, so photograph every angle, then press <b>Count and compare all</b>. On the first round
+     that makes each photo its angle&rsquo;s baseline; from then on it is compared against it.</p>
 </div>
 <script>
   window.SHELF_ID = {{ shelf.id }};

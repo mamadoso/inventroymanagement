@@ -165,6 +165,28 @@ def check_multiangle(client, appmod, base, minus) -> list[str]:
     else:
         print("discard staged      : queue emptied, baselines intact")
 
+    # One angle failing must not take the rest of the batch down, and the report
+    # has to name the failed angle instead of going quiet about it.
+    real_detect = appmod.vision.detect
+
+    def boom(_img):
+        raise appmod.VisionError("simulated gateway outage")
+
+    appmod.vision.detect = boom
+    stage(base, keys[0])
+    stage(base, keys[1])
+    started, prog = analyse()
+    appmod.vision.detect = real_detect
+    if prog.get("failed") != 2 or not prog.get("complete"):
+        failures.append(f"both angles should fail cleanly, not hang: {prog}")
+    rep = client.get(f"/shelves/{sid}/report")
+    if "analysis failed" not in rep.text:
+        failures.append("the report must say which angle failed")
+    elif "simulated gateway outage" not in rep.text:
+        failures.append("the report should carry the reason the AI gave")
+    else:
+        print("failed angle      : batch survived, report names the cause")
+
     return failures
 
 

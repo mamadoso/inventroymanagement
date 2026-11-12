@@ -234,6 +234,11 @@ def shelf_report(shelf: dict) -> dict:
             s = d["summary"]
             e["state"], e["text"] = diffmod.verdict(s)
             e["counts"], e["summary"] = s["counts"], s
+        elif v.get("last_failed"):
+            e["state"] = "bad"
+            e["text"] = "analysis failed: " + (
+                (v["last_failed"].get("error") or "no reason given").strip()[:140]
+            )
         entries.append(e)
 
     scored = [e for e in entries if e["counts"]]
