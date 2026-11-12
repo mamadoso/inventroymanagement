@@ -114,12 +114,18 @@ def check_multiangle(client, appmod, base, minus) -> list[str]:
     if prog.get("failed"):
         return failures + [f"angle(s) failed to analyse: {prog.get('errors')}"]
 
+    # Round one only establishes the reference set: neither angle had a baseline,
+    # so both staged photos become baselines and there is nothing to diff yet.
     rep = client.get(f"/shelves/{sid}/report")
+    shelf = store.get_shelf(sid)
     if rep.status_code != 200:
         return failures + [f"GET /shelves/{{id}}/report -> {rep.status_code}"]
-    if "No change" not in rep.text:
-        return failures + ["two identical angles should report no change"]
-    print("combined report   : 200, both angles clean")
+    if "Nothing analysed yet" not in rep.text:
+        failures.append("the first pass should set baselines, not invent a diff")
+    if not all(v["baseline"] for v in shelf["views"]):
+        failures.append("both angles should now have a baseline")
+    else:
+        print("first pass        : both angles became baselines")
 
     # Second round: the same front, one watch gone on the other angle.
     stage(base, keys[0])
@@ -127,6 +133,10 @@ def check_multiangle(client, appmod, base, minus) -> list[str]:
     started, prog = analyse()
     if not prog.get("complete") or prog.get("failed"):
         return failures + [f"second analyse pass failed: {prog}"]
+
+    rep = client.get(f"/shelves/{sid}/report")
+    if rep.status_code != 200 or "missing" not in rep.text:
+        failures.append(f"the report page should show the theft: {rep.status_code}")
 
     report = appmod.shelf_report(store.get_shelf(sid))
     rows = {r["key"]: r for r in report["rows"]}
@@ -141,6 +151,7 @@ def check_multiangle(client, appmod, base, minus) -> list[str]:
         if "missing" not in report["headline"]:
             failures.append(f"headline should mention the theft: {report['headline']}")
         print(f"shelf headline      : {report['headline']}")
+        print(f"  {keys[0]}: {a['text']} | {keys[1]}: {b['text']}")
 
     # Discarding staged photos must not touch baselines or past diffs.
     stage(minus, keys[0])
