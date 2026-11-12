@@ -110,6 +110,9 @@ def process_upload(
     base_img = imaging.open_image(config.IMAGE_DIR / base_shot["filename"])
     cap_img = imaging.open_image(dest)
     summary = diffmod.compare(base_img, cap_img, base_shot["items"], det.items)
+    align = imaging.frame_similarity(base_img, cap_img)
+    summary["frame_align"] = round(align, 3)
+    summary["camera_shift"] = align < config.FRAME_ALIGN_MIN
 
     annot_cap_rel = f"{rel_dir}/{stem}-cap.jpg"
     annot_base_rel = ""

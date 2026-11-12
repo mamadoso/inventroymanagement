@@ -33,6 +33,7 @@ main { max-width: 1080px; margin: 0 auto; padding: 12px 14px 40px; }
 .banner { padding: 9px 14px; font-size: 13.5px; }
 .banner.mock { background: #2a2410; color: #f0d98a; border-bottom: 1px solid #4a3d16; }
 .banner.warn { background: #2a1e0c; color: #f5c97a; }
+.banner.bad { background: #2b1113; color: #ff9ba0; border-bottom: 1px solid #5a2126; }
 
 .hero { padding: 18px 0 6px; }
 .hero h1 { font-size: 26px; margin: 0 0 8px; }

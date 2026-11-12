@@ -178,6 +178,13 @@ def verdict(summary: dict) -> tuple[str, str]:
     c = summary["counts"]
     if summary.get("error"):
         return "bad", "Could not analyse this photo"
+    # A shifted camera produces a confident, completely fictional change list.
+    # Say so before anything else, or the manager goes to check the safe.
+    align = summary.get("frame_align")
+    if align is not None and align < config.FRAME_ALIGN_MIN:
+        return "bad", (
+            f"Camera moved - framing match {align:.0%}, change counts unreliable"
+        )
     if not c["missing"] and not c["new"] and not c["swapped"]:
         if c["moved"]:
             return "warn", f"Same {summary['cap_total']} watches, {c['moved']} moved"

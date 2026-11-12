@@ -107,6 +107,24 @@ def run() -> int:
     except Exception as exc:
         failures.append(f"truncated JSON repair raised {exc!r}")
 
+    # The diff compares boxes by position, so it silently invents thefts when the
+    # photographer moves. The framing guard must fire before the counts do.
+    shifted = base.crop((60, 0, base.width, base.height))
+    shifted.paste(base.crop((0, 0, 60, base.height)), (base.width - 60, 0))
+    align_same = imaging.frame_similarity(base, minus)
+    align_shift = imaging.frame_similarity(base, shifted)
+    if not align_shift < align_same:
+        failures.append(
+            f"frame_similarity missed a 60px shift ({align_shift:.2f} vs {align_same:.2f})"
+        )
+    fake = {"counts": {"missing": 9, "new": 4, "swapped": 10, "moved": 1},
+            "frame_align": align_shift, "cap_total": 50}
+    state, text = diffmod.verdict(fake)
+    if state != "bad" or "amera" not in text:
+        failures.append(f"a shifted camera should read as unreliable, got {state}: {text}")
+    print(f"framing guard     : same={align_same:.2f} shifted={align_shift:.2f} "
+          f"floor={config.FRAME_ALIGN_MIN} -> {text}")
+
     # Persistence + report rendering, still without a web server.
     sid = store.create_shelf("selftest")
     views = store.get_shelf(sid)["views"]

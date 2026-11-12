@@ -128,6 +128,20 @@ def _hist(img: Image.Image) -> np.ndarray:
     return h / s if s > 0 else h
 
 
+def frame_similarity(a: Image.Image, b: Image.Image) -> float:
+    """Whole-frame 0..1 similarity between two photos of the same scene.
+
+    The diff assumes the camera did not move: boxes are compared by position.
+    When someone steps left or re-zooms, every box shifts, spatial matching
+    collapses, and the result is a confident report of thefts that did not
+    happen. Measuring the frames first turns that into a warning instead.
+    """
+    bits = 144  # dhash(size=12) -> 12*12
+    ha = dhash(a.convert("RGB").resize((320, 200), Image.BILINEAR))
+    hb = dhash(b.convert("RGB").resize((320, 200), Image.BILINEAR))
+    return 1.0 - hamming(ha, hb) / float(bits)
+
+
 def appearance_similarity(a: Image.Image, b: Image.Image) -> float:
     """Blend of structural hash and colour histogram. 0 = unrelated, 1 = same object."""
     bits = 144  # 12*12

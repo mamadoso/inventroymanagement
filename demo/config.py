@@ -86,6 +86,11 @@ SAME_OBJECT_APPEAR = float(_env("AHADI_SAME_OBJECT_MIN", default="0.62"))
 # *place*. Below it they are left unmatched so the move pass can pair them -
 # otherwise a moved watch matches its new position and reports as "unchanged".
 SAME_PLACE_SPATIAL = float(_env("AHADI_SAME_PLACE_MIN", default="0.45"))
+# Below this whole-frame similarity the camera moved between shots and the diff
+# is meaningless - it will report moved/swapped items that are just parallax.
+# Measured: a hand-held re-shoot of the same shelf scored 0.55; a fixed camera
+# scores above 0.85.
+FRAME_ALIGN_MIN = float(_env("AHADI_FRAME_ALIGN_MIN", default="0.75"))
 
 # ------------------------------------------------------------------------ web
 PUBLIC_BASE = _env("AHADI_PUBLIC_BASE")

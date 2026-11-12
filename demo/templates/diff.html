@@ -16,6 +16,20 @@
 </div>
 
 {% set c = d.summary.counts %}
+{% if d.summary.camera_shift %}
+<div class="banner bad">
+  <b>The camera moved between these two photos</b> — framing match
+  {{ (d.summary.frame_align * 100) | round(0) | int }}%. Every count below is
+  likely parallax, not theft. Re-take the photo from the same spot and distance
+  as the baseline, or clear this angle and set a new baseline.
+</div>
+{% endif %}
+{% if d.capture.quality and d.capture.quality != 'good' %}
+<div class="banner warn">
+  The model flagged this photo as <b>{{ d.capture.quality }}</b> — glare, blur or
+  low light makes the count less reliable, not just smaller.
+</div>
+{% endif %}
 <div class="statgrid">
   <div class="stat ok"><b>{{ c.unchanged }}</b><span>unchanged</span></div>
   <div class="stat bad"><b>{{ c.missing }}</b><span>missing</span></div>
