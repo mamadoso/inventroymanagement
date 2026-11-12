@@ -262,6 +262,21 @@ def run() -> int:
     print(f"framing guard     : same={align_same:.2f} shifted={align_shift:.2f} "
           f"floor={config.FRAME_ALIGN_MIN} | re-shoot 0.55 -> {text}")
 
+    # Many missing AND many new while the framing is identical is the model
+    # re-gridding the shelf between two photos, not a raid. Refuse to count it.
+    flaky = {"counts": {"missing": 6, "new": 5, "swapped": 0, "moved": 0},
+             "frame_align": 0.94, "cap_total": 11, "base_total": 12}
+    if not diffmod.detection_unstable(flaky):
+        failures.append("6 missing + 5 new at 94% framing should read as unstable")
+    state, text = diffmod.verdict(flaky)
+    if state != "warn" or "unreliable" not in text:
+        failures.append(f"unstable counts should be flagged, got {state}: {text}")
+    theft = {"counts": {"missing": 3, "new": 0, "swapped": 0, "moved": 0},
+             "frame_align": 0.94, "cap_total": 9, "base_total": 12}
+    if diffmod.detection_unstable(theft):
+        failures.append("a clean theft (3 missing, 0 new) must not be called unstable")
+    print(f"unstable counts   : 6 missing + 5 new -> {text}")
+
     # Persistence + report rendering, still without a web server.
     sid = store.create_shelf("selftest")
     views = store.get_shelf(sid)["views"]

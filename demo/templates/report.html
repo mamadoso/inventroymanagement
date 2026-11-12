@@ -7,7 +7,7 @@
 
 <div class="headline {{ report.state }}">
   <div class="big-count">
-    <span class="unit">{{ report.angles }} angle{{ 's' if report.angles != 1 else '' }}</span>
+    <span class="unit">{{ report.angles }}/{{ report.scored }} usable angle{{ 's' if report.scored != 1 else '' }}</span>
   </div>
   <div class="headline-text">{{ report.headline }}</div>
   <div class="muted small">{{ now }} · {{ provider }}</div>
@@ -43,6 +43,8 @@
         <td>
           {% if e.summary.camera_shift %}
             <span class="pill bad">moved {{ (e.summary.frame_align * 100) | round(0) | int }}%</span>
+          {% elif e.summary.unstable %}
+            <span class="pill warn">unstable {{ (e.summary.frame_align * 100) | round(0) | int }}%</span>
           {% else %}
             <span class="pill ok">{{ (e.summary.frame_align * 100) | round(0) | int }}%</span>
           {% endif %}

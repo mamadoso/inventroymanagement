@@ -24,6 +24,14 @@
   as the baseline, or clear this angle and set a new baseline.
 </div>
 {% endif %}
+{% if d.summary.unstable and not d.summary.camera_shift %}
+<div class="banner warn">
+  <b>These counts describe the AI, not the shelf</b> — {{ c.missing }} items were
+  read as missing and {{ c.new }} as new while the framing stayed identical
+  ({{ (d.summary.frame_align * 100) | round(0) | int }}%). A theft empties slots,
+  it does not refill them with different watches. Retake this angle.
+</div>
+{% endif %}
 {% if d.capture.quality and d.capture.quality != 'good' %}
 <div class="banner warn">
   The model flagged this photo as <b>{{ d.capture.quality }}</b> — glare, blur or

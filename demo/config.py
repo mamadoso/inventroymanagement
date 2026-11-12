@@ -91,6 +91,11 @@ SAME_PLACE_SPATIAL = float(_env("AHADI_SAME_PLACE_MIN", default="0.45"))
 # Measured: a hand-held re-shoot of the same shelf scored 0.55; a fixed camera
 # scores above 0.85.
 FRAME_ALIGN_MIN = float(_env("AHADI_FRAME_ALIGN_MIN", default="0.75"))
+# When the framing is this good but the diff still reports lots of items missing
+# *and* lots new, the model has re-gridded the shelf between the two photos.
+# Neither number describes the shelf, so the app says so instead of counting.
+UNSTABLE_MIN = int(_env("AHADI_UNSTABLE_MIN", default="3"))
+UNSTABLE_ALIGN_MIN = float(_env("AHADI_UNSTABLE_ALIGN_MIN", default="0.90"))
 
 # ------------------------------------------------------------------------ web
 PUBLIC_BASE = _env("AHADI_PUBLIC_BASE")

@@ -146,6 +146,7 @@ def analyse_shot(shot_id: int) -> dict:
     align = imaging.frame_similarity(base_img, cap_img)
     summary["frame_align"] = round(align, 3)
     summary["camera_shift"] = align < config.FRAME_ALIGN_MIN
+    summary["unstable"] = diffmod.detection_unstable(summary)
 
     stem = Path(shot["filename"]).stem
     rel_dir = str(Path(shot["filename"]).parent)
@@ -250,13 +251,20 @@ def shelf_report(shelf: dict) -> dict:
         entries.append(e)
 
     scored = [e for e in entries if e["counts"]]
+    # An angle whose framing moved, or whose counts look like the model
+    # re-gridded the shelf, cannot contribute a number the manager can act on.
+    def flag(e, name):
+        return bool((e["summary"] or {}).get(name))
+
+    shifted = [e for e in scored if flag(e, "camera_shift")]
+    unstable = [e for e in scored if flag(e, "unstable")]
+    trusted = [e for e in scored if not flag(e, "camera_shift") and not flag(e, "unstable")]
 
     def span(key: str) -> tuple[int, int]:
-        vals = [e["counts"][key] for e in scored]
+        vals = [e["counts"][key] for e in trusted]
         return (max(vals) if vals else 0, sum(vals) if vals else 0)
 
-    shifted = [e for e in scored if (e["summary"] or {}).get("camera_shift")]
-    dirty = [e for e in scored
+    dirty = [e for e in trusted
              if e["counts"]["missing"] or e["counts"]["new"] or e["counts"]["swapped"]]
     if not scored:
         headline, state = "Nothing analysed yet", "idle"
@@ -264,19 +272,25 @@ def shelf_report(shelf: dict) -> dict:
         headline = (f"{len(shifted)} of {len(scored)} angle(s) were shot from a different "
                     f"position - those counts cannot be trusted")
         state = "bad"
+    elif unstable:
+        headline = (f"{len(unstable)} of {len(scored)} angle(s) reported items missing and "
+                    f"new at the same time with the framing unchanged - the AI disagreed "
+                    f"with itself, so retake those angles")
+        state = "warn"
     elif not dirty:
-        headline, state = f"No change across {len(scored)} angle(s)", "ok"
+        headline, state = f"No change across {len(trusted)} angle(s)", "ok"
     else:
         parts = []
         for lo, hi, word in (span("missing") + ("missing",), span("new") + ("new",),
                              span("swapped") + ("swapped",), span("moved") + ("moved",)):
             if hi:
                 parts.append(f"{lo} {word}" if lo == hi else f"{lo}-{hi} {word}")
-        headline = (f"Changes on {len(dirty)} of {len(scored)} angle(s) - "
+        headline = (f"Changes on {len(dirty)} of {len(trusted)} angle(s) - "
                     + ", ".join(parts)) if parts else "No change"
         state = "bad" if span("missing")[1] else "warn"
     return {"rows": entries, "headline": headline, "state": state,
-            "angles": len(scored), "queued": sum(e["queued"] for e in entries)}
+            "angles": len(trusted), "scored": len(scored),
+            "queued": sum(e["queued"] for e in entries)}
 
 
 # -------------------------------------------------------------------- pages

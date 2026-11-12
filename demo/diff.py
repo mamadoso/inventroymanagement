@@ -173,6 +173,24 @@ def compare(
     }
 
 
+def detection_unstable(summary: dict) -> bool:
+    """True when the change list is about the AI, not about the shelf.
+
+    A theft empties slots; it does not fill them with different watches. Many
+    missing AND many new while the framing stays identical is the signature of
+    the model drawing its boxes in a different order between the two photos.
+    That is a detection problem: it needs a retake, not a stock count.
+    """
+    c = summary.get("counts") or {}
+    align = summary.get("frame_align")
+    return bool(
+        c.get("missing", 0) >= config.UNSTABLE_MIN
+        and c.get("new", 0) >= config.UNSTABLE_MIN
+        and align is not None
+        and align >= config.UNSTABLE_ALIGN_MIN
+    )
+
+
 def verdict(summary: dict) -> tuple[str, str]:
     """(css_class, human headline) for the UI."""
     c = summary["counts"]
@@ -184,6 +202,11 @@ def verdict(summary: dict) -> tuple[str, str]:
     if align is not None and align < config.FRAME_ALIGN_MIN:
         return "bad", (
             f"Camera moved - framing match {align:.0%}, change counts unreliable"
+        )
+    if summary.get("unstable") or detection_unstable(summary):
+        return "warn", (
+            f"Counts unreliable - {c['missing']} missing and {c['new']} new with the "
+            f"framing identical ({align:.0%}); the AI disagreed with itself. Retake."
         )
     if not c["missing"] and not c["new"] and not c["swapped"]:
         if c["moved"]:
