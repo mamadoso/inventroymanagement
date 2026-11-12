@@ -436,15 +436,24 @@ async def upload_form(
     source: str = Form("upload"),
     taken_by: str = Form(""),
 ):
-    """Plain HTML form upload (desktop admin pages). Redirects to the report."""
+    """Plain HTML form upload (desktop admin pages).
+
+    Stages the photo like the phone does. Counting is one deliberate action over
+    the whole set, not something that happens as each file lands, otherwise the
+    desktop and the phone would be two different products.
+    """
     data = await file.read()
     if not data:
         return RedirectResponse(f"/shelves/{sid}?msg=No+file+selected", status_code=303)
-    result = process_upload(sid, view, data, source, taken_by)
-    if result.get("ok"):
-        return RedirectResponse(result["redirect"], status_code=303)
-    msg = quote((result.get("error") or "processing failed")[:180])
-    return RedirectResponse(f"/shelves/{sid}?msg=Failed%3A+{msg}", status_code=303)
+    result = process_upload(sid, view, data, source, taken_by, analyse=False)
+    if not result.get("ok"):
+        msg = quote((result.get("error") or "could not save that photo")[:180])
+        return RedirectResponse(f"/shelves/{sid}?msg=Failed%3A+{msg}", status_code=303)
+    return RedirectResponse(
+        f"/shelves/{sid}?msg=Saved+{quote(result['view_label'])}"
+        f"+({result['staged']}+staged)+-+press+Count+and+compare",
+        status_code=303,
+    )
 
 
 @app.get("/diffs/{did}", response_class=HTMLResponse)
@@ -622,13 +631,16 @@ def analyse_progress(sid: int):
 
 
 @app.post("/shelves/{sid}/staged/discard")
-def discard_staged(sid: int):
+def discard_staged(sid: int, next: str = Form("")):
     """Throw the staged photos away (a retake) without touching baselines."""
     if not store.get_shelf(sid):
         raise HTTPException(404, "shelf not found")
-    n = store.discard_queued(sid)
+    store.discard_queued(sid)
+    # Only ever follow a path we handed out, never an absolute URL.
+    if next.startswith("/shelves/"):
+        return RedirectResponse(f"{next}?msg=Staged+photos+discarded", status_code=303)
     return RedirectResponse(
-        f"/capture?shelf={sid}&msg=Discarded+{n}+staged+photo(s)", status_code=303
+        f"/capture?shelf={sid}&msg=Discarded+staged+photo(s)", status_code=303
     )
 
 

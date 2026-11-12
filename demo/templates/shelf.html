@@ -22,10 +22,24 @@
 
 {% set queued = shelf.views | sum(attribute='queued') %}
 {% if queued %}
+<div class="card staged">
+  <p class="staged-head"><b id="stagedcount">{{ queued }}</b>
+     photo(s) saved, nothing counted yet.</p>
+  <div class="split">
+    <button class="btn big" id="analyse" type="button">Count and compare all {{ queued }} photo(s)</button>
+    <form method="post" action="/shelves/{{ shelf.id }}/staged/discard"
+          onsubmit="return confirm('Discard the staged photos? Nothing has been counted yet.')">
+      <input type="hidden" name="next" value="/shelves/{{ shelf.id }}">
+      <button class="ghost small" type="submit">Discard these</button>
+    </form>
+  </div>
+  <div id="status" class="status" hidden></div>
+</div>
+{% elif not shelf.total_shots %}
 <div class="banner warn">
-  <b>{{ queued }}</b> photo(s) are staged and have not been counted yet.
-  <a href="/capture?shelf={{ shelf.id }}">Go to the capture screen</a> and press
-  &ldquo;Count and compare all&rdquo;.
+  Nothing photographed yet. Open the capture screen, photograph <b>every angle</b>
+  of this shelf, then press <b>Count and compare all</b> once — the first round
+  sets the baseline for each angle.
 </div>
 {% endif %}
 
@@ -78,8 +92,10 @@
     <input type="hidden" name="view" value="{{ v.key }}">
     <input type="hidden" name="source" value="upload">
     <input type="file" name="file" accept="image/*">
-    <button type="submit">{% if v.baseline %}Add capture &amp; compare{% else %}Set as baseline{% endif %}</button>
+    <button type="submit">Add photo to this angle</button>
   </form>
+  <p class="muted small">Photos are only counted when you press <b>Count and compare all</b>
+     above, so the whole set is compared in one pass.</p>
 
   <div class="row" style="margin-top:8px">
     {% if v.shot_count %}
@@ -100,4 +116,10 @@
     <button type="submit">Add view</button>
   </form>
 </section>
+
+<script src="/static/analyse.js"></script>
+<script>
+  AhadiAnalyse.wire(document.getElementById("analyse"),
+                    document.getElementById("status"), {{ shelf.id }});
+</script>
 {% endblock %}

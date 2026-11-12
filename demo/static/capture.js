@@ -43,7 +43,6 @@
   const STAGED0 = window.STAGED || {};
   const stagedViews = new Set(Object.keys(STAGED0));
   let stagedCount = Object.values(STAGED0).reduce((a, b) => a + b, 0);
-  let analysing = false;
 
   function paintStaged() {
     const box = $("staged");
@@ -103,51 +102,8 @@
     );
   }
 
-  async function analyseAll() {
-    if (analysing || !stagedCount) return;
-    analysing = true;
-    const btn = $("analyse");
-    btn.disabled = true;
-    const total = stagedCount;
-    const t0 = Date.now();
-    showStatus(`Counting ${total} photo(s)… 0/${total} · 0s`, false);
-    let res;
-    try {
-      res = await fetch(`/shelves/${window.SHELF_ID}/analyse`, { method: "POST" });
-    } catch (e) {
-      showStatus("Could not start the analysis — is the server running?", false);
-      btn.disabled = false;
-      analysing = false;
-      return;
-    }
-    const start = await res.json().catch(() => ({}));
-    if (start.complete || !start.started) {
-      location.href = start.redirect || `/shelves/${window.SHELF_ID}`;
-      return;
-    }
-    const timer = setInterval(async () => {
-      let p;
-      try {
-        p = await (await fetch(`/api/analyse/${window.SHELF_ID}/progress`)).json();
-      } catch (e) {
-        return;  // transient; the next tick will try again
-      }
-      const secs = Math.round((Date.now() - t0) / 1000);
-      const done = p.done ?? 0, all = p.total || total;
-      showStatus(
-        `Counting ${all} photo(s)… ${done}/${all} · ${secs}s` +
-        (p.failed ? ` · ${p.failed} failed` : ""),
-        false
-      );
-      if (p.complete) {
-        clearInterval(timer);
-        location.href = `/shelves/${window.SHELF_ID}/report`;
-      }
-    }, 1500);
-  }
-
   if ($("analyse")) {
-    $("analyse").addEventListener("click", analyseAll);
+    window.AhadiAnalyse.wire($("analyse"), statusEl, window.SHELF_ID);
     $("discard").addEventListener("click", () => {
       if (!confirm("Discard the staged photos? Nothing has been counted yet.")) return;
       fetch(`/shelves/${window.SHELF_ID}/staged/discard`, { method: "POST" })
